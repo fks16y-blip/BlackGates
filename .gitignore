@@ -1,0 +1,25 @@
+node_modules/
+dist/
+.env
+.env.*
+!.env.example
+*.backup_*
+package.json.bak_*
+.DS_Store
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/key.properties
+*.jks
+*.keystore
+
+# Backups locais
+public/js/*.bak
+public/js/*.bak_*
+public/js/*.backup
+public/js/*.backup-*
+public/models/*.backup
+public/js/main.js.backup*
+public/models/humanoid_novo.glb
+public/models/personagem.glb
