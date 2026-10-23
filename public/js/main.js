@@ -104,13 +104,28 @@ let roomLightsOn = true;
 const switchRaycaster = new THREE.Raycaster();
 const switchPointer = new THREE.Vector2();
 
-function toggleRoomLights() {
-  roomLightsOn = !roomLightsOn;
+function applyRoomLights(on) {
+  roomLightsOn = on === true;
   hemisphereLight.intensity = roomLightsOn ? 2 : 0.015;
   light.intensity = roomLightsOn ? 2 : 0;
   switchButton.position.y = roomLightsOn ? 0 : -0.16;
   switchButtonMat.color.setHex(roomLightsOn ? 0x39d879 : 0xe04444);
   switchButtonMat.emissive.setHex(roomLightsOn ? 0x12552a : 0x551010);
+}
+
+function toggleRoomLights() {
+  applyRoomLights(!roomLightsOn);
+
+  if (
+    multiplayerRoomCode &&
+    multiplayerSocket &&
+    multiplayerSocket.readyState === WebSocket.OPEN
+  ) {
+    multiplayerSocket.send(JSON.stringify({
+      type: 'roomLights',
+      roomLightsOn
+    }));
+  }
 }
 
 // ESPELHO COM REFLEXAO 3D
@@ -302,6 +317,37 @@ scene.add(pistolPickup);
 
 let hasPistol = false;
 let pistolEquipped = false;
+let pistolAvailable = true;
+let pistolPickupPending = false;
+
+function grantPistolToLocalPlayer() {
+  hasPistol = true;
+  scene.remove(pistolPickup);
+  pistolPickup.visible = false;
+  pickupPistolButton.style.display = "none";
+
+  secondItemSlot.querySelector("span").textContent = "🔫";
+  secondItemSlot.setAttribute("aria-label", "Slot 2: Pistola");
+  secondItemSlot.style.borderColor = "#ffcc80";
+}
+
+function applyPistolAvailability(available, collectorId = null) {
+  pistolAvailable = available;
+  pistolPickupPending = false;
+
+  if (!available) {
+    if (collectorId && collectorId === multiplayerPlayerId) {
+      grantPistolToLocalPlayer();
+    } else {
+      scene.remove(pistolPickup);
+      pistolPickup.visible = false;
+      pickupPistolButton.style.display = "none";
+    }
+  } else if (!hasPistol) {
+    scene.add(pistolPickup);
+    pistolPickup.visible = true;
+  }
+}
 let pistolMagazine = 50;
 let pistolReserve = 50;
 let pistolReloading = false;
@@ -1113,8 +1159,10 @@ function createRemotePlayer(playerId) {
   });
 
   let remoteRightHand = null;
+  let remoteHandSocket = null;
   model.traverse((object) => {
     if (object.name === 'RightHand') remoteRightHand = object;
+    if (object.name === 'Socket_RightHand') remoteHandSocket = object;
     if (object.isMesh) {
       object.material = remoteMaterial;
       object.castShadow = true;
@@ -1155,12 +1203,13 @@ function createRemotePlayer(playerId) {
     }
   });
 
-  if (remoteRightHand) {
-    remoteRightHand.add(remotePistol);
+  const remoteEquipmentSocket = remoteHandSocket || remoteRightHand;
+  if (remoteEquipmentSocket) {
+    remoteEquipmentSocket.add(remotePistol);
     remotePistol.position.set(-0.08, -0.02, 0.10);
     remotePistol.rotation.set(Math.PI / 2, Math.PI, 0);
 
-    remoteRightHand.add(remoteFlashlight);
+    remoteEquipmentSocket.add(remoteFlashlight);
     remoteFlashlight.position.set(0, -0.12, 0);
     remoteFlashlight.rotation.set(0, Math.PI, 0);
   } else {
@@ -1171,7 +1220,7 @@ function createRemotePlayer(playerId) {
   // Suporte visual independente, preso ao tronco do personagem.
   const support = new THREE.Group();
   support.name = 'RemoteBackCameraSupport';
-  model.add(support);
+  root.add(support);
 
   const supportMetal = new THREE.MeshStandardMaterial({
     color: 0x252c34, roughness: 0.4, metalness: 0.7
@@ -1332,6 +1381,20 @@ function updateRemotePlayerState(playerId, state) {
 
   remote.moving = state.moving === true;
   remote.running = state.running === true;
+
+  if (remote.moving && !remote.userDataWalkDebug) {
+    remote.userDataWalkDebug = true;
+    console.log("[REMOTO WALK]", {
+      playerId,
+      moving: remote.moving,
+      walkClip: remote.walkAction?.getClip().name ?? null,
+      walkEnabled: remote.walkAction?.enabled ?? false,
+      walkPlaying: remote.walkAction?.isRunning() ?? false,
+      legTracks: remote.walkAction?.getClip().tracks
+        .filter(track => /UpperLeg|LowerLeg|Foot/i.test(track.name))
+        .map(track => track.name) ?? []
+    });
+  }
 
   const nextAction = remote.moving
     ? (remote.walkAction || remote.idleAction)
@@ -1681,7 +1744,7 @@ pickupFlashlightButton.addEventListener("click", () => {
 
 // Coleta da pistola e inventário do slot 2.
 pickupPistolButton.addEventListener("click", () => {
-  if (hasPistol) return;
+  if (hasPistol || !pistolAvailable || pistolPickupPending) return;
 
   const distance = Math.hypot(
     player.position.x - pistolPickup.position.x,
@@ -1689,14 +1752,18 @@ pickupPistolButton.addEventListener("click", () => {
   );
   if (distance > 1.8) return;
 
-  hasPistol = true;
-  scene.remove(pistolPickup);
-  pistolPickup.visible = false;
-  pickupPistolButton.style.display = "none";
+  if (
+    multiplayerRoomCode &&
+    socket &&
+    socket.readyState === WebSocket.OPEN
+  ) {
+    pistolPickupPending = true;
+    pickupPistolButton.style.display = "none";
+    socket.send(JSON.stringify({ type: "collectPistol" }));
+    return;
+  }
 
-  secondItemSlot.querySelector("span").textContent = "🔫";
-  secondItemSlot.setAttribute("aria-label", "Slot 2: Pistola");
-  secondItemSlot.style.borderColor = "#ffcc80";
+  grantPistolToLocalPlayer();
 });
 
 secondItemSlot.addEventListener("click", () => {
@@ -2177,12 +2244,24 @@ function connectMultiplayer() {
         roomCodeDisplay.textContent = multiplayerRoomCode;
         createdRoomCode.style.display = 'block';
         multiplayerRoomInfo.textContent = 'Sala criada! Compartilhe o código.';
+        if (typeof message.roomLightsOn === 'boolean') {
+          applyRoomLights(message.roomLightsOn);
+    if (typeof message.pistolAvailable === 'boolean') {
+      applyPistolAvailability(message.pistolAvailable);
+    }
+        }
       } else if (message.type === 'roomJoined') {
         multiplayerRoomCode = String(message.roomCode || message.code || joinRoomInput.value);
         multiplayerPlayerId = message.playerId || multiplayerPlayerId;
         roomCodeDisplay.textContent = multiplayerRoomCode;
         createdRoomCode.style.display = 'block';
         multiplayerRoomInfo.textContent = 'Você entrou na sala.';
+        if (typeof message.roomLightsOn === 'boolean') {
+          applyRoomLights(message.roomLightsOn);
+    if (typeof message.pistolAvailable === 'boolean') {
+      applyPistolAvailability(message.pistolAvailable);
+    }
+        }
         if (Array.isArray(message.players)) {
           for (const item of message.players) {
             const id = typeof item === 'string' ? item : item?.playerId || item?.id;
@@ -2193,7 +2272,16 @@ function connectMultiplayer() {
         }
       } else if (message.type === 'playerJoined') {
         multiplayerRoomInfo.textContent = 'Outro jogador entrou na sala.';
-      } else if (message.type === 'sync') {
+      } else if (message.type === 'roomLights') {
+        if (typeof message.roomLightsOn === 'boolean') {
+          applyRoomLights(message.roomLightsOn);
+        }
+      } else if (message.type === 'pistolAvailability') {
+    applyPistolAvailability(
+      message.available === true,
+      message.playerId || null
+    );
+  } else if (message.type === 'sync') {
         const id = message.playerId || message.id;
         const state = message.state || message;
         updateRemotePlayerState(id, state);
@@ -2870,13 +2958,15 @@ function animate() {
       flashlightDistance < 1.8 ? "block" : "none";
   }
 
-  if (!hasPistol) {
+  if (!hasPistol && pistolAvailable && !pistolPickupPending) {
     const pistolDistance = Math.hypot(
       player.position.x - pistolPickup.position.x,
       player.position.z - pistolPickup.position.z
     );
     pickupPistolButton.style.display =
       pistolDistance < 1.8 ? "block" : "none";
+  } else {
+    pickupPistolButton.style.display = "none";
   }
 
   if (ammoBox.parent) {
