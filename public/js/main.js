@@ -215,6 +215,7 @@ const flashlightLight = new THREE.SpotLight(
 );
 flashlightLight.position.set(0.34, 0, 0);
 const flashlightTarget = new THREE.Object3D();
+flashlightTarget.name = 'FlashlightTarget';
 flashlightTarget.position.set(-5, 0, 0);
 flashlightPickup.add(flashlightTarget);
 flashlightLight.target = flashlightTarget;
@@ -1159,6 +1160,7 @@ function createRemotePlayer(playerId) {
   });
 
   let remoteRightHand = null;
+  let remoteLeftHand = null;
   let remoteHandSocket = null;
   let remoteLeftUpperArm = null;
   let remoteRightUpperArm = null;
@@ -1171,6 +1173,7 @@ function createRemotePlayer(playerId) {
   let remoteRightShinBone = null;
   model.traverse((object) => {
     if (object.name === 'RightHand') remoteRightHand = object;
+    if (object.name === 'LeftHand') remoteLeftHand = object;
     if (object.name === 'Socket_RightHand') remoteHandSocket = object;
     if (object.name === 'LeftUpperArm') remoteLeftUpperArm = object;
     if (object.name === 'RightUpperArm') remoteRightUpperArm = object;
@@ -1209,13 +1212,27 @@ function createRemotePlayer(playerId) {
   const remotePistol = pistolPickup.clone(true);
   remotePistol.scale.copy(pistolPickup.scale);
   remotePistol.visible = false;
+  let remoteMuzzleFlash = null;
+  let remoteMuzzleLight = null;
   remotePistol.traverse((object) => {
     if (object.isMesh) object.castShadow = true;
-    if (object.isMesh && object.geometry === muzzleFlash.geometry) object.visible = false;
+    if (object.isMesh && object.geometry === muzzleFlash.geometry) {
+      remoteMuzzleFlash = object;
+      object.visible = false;
+    }
+    if (object.isLight && object.type === 'PointLight') {
+      remoteMuzzleLight = object;
+      object.visible = false;
+    }
   });
 
   const remoteFlashlight = flashlightPickup.clone(true);
   remoteFlashlight.scale.copy(flashlightPickup.scale);
+  const remoteFlashlightTarget = remoteFlashlight.getObjectByName('FlashlightTarget');
+  const remoteFlashlightLight = remoteFlashlight.getObjectByProperty('type', 'SpotLight');
+  if (remoteFlashlightLight && remoteFlashlightTarget) {
+    remoteFlashlightLight.target = remoteFlashlightTarget;
+  }
   remoteFlashlight.visible = false;
   remoteFlashlight.traverse((object) => {
     if (object.isLight) object.visible = false;
@@ -1350,6 +1367,7 @@ function createRemotePlayer(playerId) {
     leftShinBone: remoteLeftShinBone,
     rightShinBone: remoteRightShinBone,
     rightHand: remoteRightHand,
+    leftHandBone: remoteLeftHand,
     leftUpperArmBone: remoteLeftUpperArm,
     rightUpperArmBone: remoteRightUpperArm,
     leftLowerArmBone: remoteLeftLowerArm,
@@ -1358,8 +1376,11 @@ function createRemotePlayer(playerId) {
     aimPitch: 0,
     aimYaw: 0,
     pistol: remotePistol,
+    muzzleFlash: remoteMuzzleFlash,
+    muzzleLight: remoteMuzzleLight,
     flashlight: remoteFlashlight,
-    flashlightLight: remoteFlashlight.getObjectByProperty('type', 'SpotLight'),
+    flashlightTarget: remoteFlashlightTarget,
+    flashlightLight: remoteFlashlightLight,
     flashlightBeam: remoteFlashlight.children.find(
       (object) => object.isMesh && object.geometry?.type === 'ConeGeometry'
     ),
@@ -1393,6 +1414,79 @@ function clearRemotePlayers() {
   for (const playerId of [...remotePlayers.keys()]) {
     removeRemotePlayer(playerId);
   }
+}
+
+
+function playRemoteGunshotSound() {
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    const audio = new AudioCtx();
+
+    const playNoise = (duration, volume, frequency) => {
+      const length = Math.floor(audio.sampleRate * duration);
+      const buffer = audio.createBuffer(1, length, audio.sampleRate);
+      const data = buffer.getChannelData(0);
+      for (let i = 0; i < length; i++) {
+        data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / length, 2);
+      }
+      const source = audio.createBufferSource();
+      const filter = audio.createBiquadFilter();
+      const gain = audio.createGain();
+      source.buffer = buffer;
+      filter.type = 'lowpass';
+      filter.frequency.value = frequency;
+      gain.gain.setValueAtTime(volume, audio.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, audio.currentTime + duration);
+      source.connect(filter);
+      filter.connect(gain);
+      gain.connect(audio.destination);
+      source.start();
+      source.stop(audio.currentTime + duration);
+      source.onended = () => {
+        source.disconnect();
+        filter.disconnect();
+        gain.disconnect();
+      };
+    };
+
+    playNoise(0.09, 0.45, 4200);
+    const oscillator = audio.createOscillator();
+    const gain = audio.createGain();
+    oscillator.type = 'triangle';
+    oscillator.frequency.setValueAtTime(105, audio.currentTime);
+    oscillator.frequency.exponentialRampToValueAtTime(38, audio.currentTime + 0.18);
+    gain.gain.setValueAtTime(0.4, audio.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, audio.currentTime + 0.2);
+    oscillator.connect(gain);
+    gain.connect(audio.destination);
+    oscillator.start();
+    oscillator.stop(audio.currentTime + 0.2);
+    setTimeout(() => {
+      if (audio.state !== 'closed') playNoise(0.12, 0.10, 1600);
+    }, 75);
+    oscillator.onended = () => {
+      oscillator.disconnect();
+      gain.disconnect();
+      setTimeout(() => {
+        if (audio.state !== 'closed') audio.close();
+      }, 250);
+    };
+  } catch (error) {
+    console.warn('Não foi possível reproduzir o disparo remoto.', error);
+  }
+}
+
+function playRemoteShot(playerId) {
+  const remote = remotePlayers.get(playerId);
+  if (!remote) return;
+  if (remote.muzzleFlash) remote.muzzleFlash.visible = true;
+  if (remote.muzzleLight) remote.muzzleLight.visible = true;
+  setTimeout(() => {
+    if (remote.muzzleFlash) remote.muzzleFlash.visible = false;
+    if (remote.muzzleLight) remote.muzzleLight.visible = false;
+  }, 70);
+  playRemoteGunshotSound();
 }
 
 function updateRemotePlayerState(playerId, state) {
@@ -1450,9 +1544,27 @@ function updateRemotePlayerState(playerId, state) {
   const flashlightOn = state.flashlightEquipped === true;
   remote.pistol.visible = pistolOn;
   remote.flashlight.visible = flashlightOn;
+  remote.flashlightEquipped = flashlightOn;
 
-  if (remote.flashlightLight) remote.flashlightLight.visible = false;
+  if (remote.flashlightLight) remote.flashlightLight.visible = flashlightOn;
   if (remote.flashlightBeam) remote.flashlightBeam.visible = false;
+
+  // Mantém o foco remoto alinhado à mira sincronizada do outro jogador.
+  if (flashlightOn && remote.flashlightTarget) {
+    remote.flashlight.updateWorldMatrix(true, true);
+    const direction = new THREE.Vector3(
+      -Math.sin(remote.aimYaw) * Math.cos(remote.aimPitch),
+      -Math.sin(remote.aimPitch),
+      -Math.cos(remote.aimYaw) * Math.cos(remote.aimPitch)
+    ).normalize();
+    const worldPosition = new THREE.Vector3();
+    remote.flashlight.getWorldPosition(worldPosition);
+    remote.flashlightTarget.position.copy(
+      remote.flashlight.worldToLocal(
+        worldPosition.clone().addScaledVector(direction, 5)
+      )
+    );
+  }
 
   const fold = Number.isFinite(state.supportFold) ? state.supportFold : 0.35;
   const height = Number.isFinite(state.supportHeight) ? state.supportHeight * 100 : 0;
@@ -1741,6 +1853,10 @@ shootButton.addEventListener("pointerdown", (event) => {
 
   pistolMagazine--;
   updateAmmoUI();
+  if (multiplayerRoomCode && multiplayerSocket &&
+      multiplayerSocket.readyState === WebSocket.OPEN) {
+    multiplayerSocket.send(JSON.stringify({ type: 'shoot' }));
+  }
 
   // Clarão curto na ponta do cano.
   muzzleFlash.visible = true;
@@ -2442,7 +2558,9 @@ function connectMultiplayer() {
       message.available === true,
       message.playerId || null
     );
-  } else if (message.type === 'sync') {
+  } else if (message.type === 'shoot') {
+        playRemoteShot(message.playerId || message.id);
+      } else if (message.type === 'sync') {
         const id = message.playerId || message.id;
         const state = message.state || message;
         updateRemotePlayerState(id, state);
@@ -3214,18 +3332,122 @@ function animate() {
       applyRemotePistolPose(
         remote.rightLowerArmBone, aimArmPitch * 0.12, 0, 0
       );
+
+      // Faz o braco esquerdo acompanhar a mao direita.
+      const leftHand = remote.leftHandBone;
+      const leftUpper = remote.leftUpperArmBone;
+      const leftLower = remote.leftLowerArmBone;
+      const rightHand = remote.rightHand;
+
+      if (leftHand && leftHand.parent && leftUpper && rightHand) {
+        remote.model.updateWorldMatrix(true, true);
+
+        const rightHandWorld = new THREE.Vector3();
+        rightHand.getWorldPosition(rightHandWorld);
+
+        const handOffset = new THREE.Vector3(-0.12, 0, 0);
+        const rootWorldQuaternion = remote.root.getWorldQuaternion(
+          new THREE.Quaternion()
+        );
+        handOffset.applyQuaternion(rootWorldQuaternion);
+        rightHandWorld.add(handOffset);
+
+        const upperParent = leftUpper.parent;
+        upperParent.updateWorldMatrix(true, false);
+
+        const shoulderWorld = new THREE.Vector3();
+        leftUpper.getWorldPosition(shoulderWorld);
+
+        const targetInParent = upperParent.worldToLocal(
+          rightHandWorld.clone()
+        );
+        const shoulderInParent = upperParent.worldToLocal(
+          shoulderWorld.clone()
+        );
+        const armDirection = targetInParent
+          .sub(shoulderInParent)
+          .normalize();
+
+        leftUpper.quaternion.setFromUnitVectors(
+          new THREE.Vector3(1, 0, 0),
+          armDirection
+        );
+
+        remote.model.updateWorldMatrix(true, true);
+
+        if (leftLower) {
+          const lowerParent = leftLower.parent;
+          lowerParent.updateWorldMatrix(true, false);
+
+          const elbowWorld = new THREE.Vector3();
+          leftLower.getWorldPosition(elbowWorld);
+
+          const targetLower = lowerParent.worldToLocal(
+            rightHandWorld.clone()
+          );
+          const elbowLower = lowerParent.worldToLocal(
+            elbowWorld.clone()
+          );
+
+          leftLower.quaternion.setFromUnitVectors(
+            new THREE.Vector3(1, 0, 0),
+            targetLower.sub(elbowLower).normalize()
+          );
+        }
+
+        if (!leftHand.userData.remotePistolHandBasePosition) {
+          leftHand.userData.remotePistolHandBasePosition =
+            leftHand.position.clone();
+        }
+
+        leftHand.parent.updateWorldMatrix(true, false);
+        leftHand.position.copy(
+          leftHand.parent.worldToLocal(rightHandWorld.clone())
+        );
+      }
+    } else if (remote.flashlightEquipped) {
+      // Pose fixa da lanterna, igual à do personagem local.
+      const arm = remote.rightLowerArmBone;
+
+      if (arm) {
+        if (!arm.userData.remoteFlashlightPoseBase) {
+          arm.userData.remoteFlashlightPoseBase = arm.rotation.clone();
+        }
+
+        const base = arm.userData.remoteFlashlightPoseBase;
+        arm.rotation.set(
+          base.x - Math.PI / 4,
+          base.y + Math.PI / 3,
+          base.z + Math.PI / 6
+        );
+      }
+
     } else {
       // RESTORE_REMOTE_PISTOL_POSE
+      const leftHand = remote.leftHandBone;
+      const handBase = leftHand?.userData.remotePistolHandBasePosition;
+
+      if (leftHand && handBase) {
+        leftHand.position.copy(handBase);
+        delete leftHand.userData.remotePistolHandBasePosition;
+      }
+
       for (const bone of [
         remote.leftUpperArmBone,
         remote.rightUpperArmBone,
         remote.leftLowerArmBone,
         remote.rightLowerArmBone
       ]) {
-        const base = bone?.userData.remotePistolPoseBase;
-        if (base) {
-          bone.rotation.copy(base);
+        const pistolBase = bone?.userData.remotePistolPoseBase;
+        if (pistolBase) {
+          bone.rotation.copy(pistolBase);
           delete bone.userData.remotePistolPoseBase;
+        }
+
+        const flashlightBase = bone?.userData.remoteFlashlightPoseBase;
+        if (flashlightBase) {
+          bone.rotation.copy(flashlightBase);
+          delete bone.userData.remoteFlashlightPoseBase;
         }
       }
     }
