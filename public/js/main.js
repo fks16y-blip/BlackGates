@@ -1379,6 +1379,7 @@ function createRemotePlayer(playerId) {
     currentAction: idleAction || walkAction,
     targetPosition: new THREE.Vector3(),
     targetRotationY: 0,
+    positionBuffer: [],
     moving: false, running: false, crouching: false,
     hipsBone: remoteHipsBone,
     leftThighBone: remoteLeftThighBone,
@@ -1514,6 +1515,27 @@ function updateRemotePlayerState(playerId, state) {
 
   const remote = createRemotePlayer(playerId);
   if (!remote) return;
+  // Guarda uma amostra para interpolar o movimento remoto.
+  const sampleTime = performance.now();
+  const sampleRotation = Number.isFinite(state.rotationY)
+    ? state.rotationY
+    : remote.targetRotationY;
+
+  remote.positionBuffer.push({
+    time: sampleTime,
+    position: new THREE.Vector3(
+      state.x,
+      Number.isFinite(state.y) ? state.y : 0,
+      state.z
+    ),
+    rotationY: sampleRotation
+  });
+
+  // Limita a memória usada pelo buffer.
+  if (remote.positionBuffer.length > 20) {
+    remote.positionBuffer.shift();
+  }
+
 
   remote.targetPosition.set(
     state.x,
@@ -3385,12 +3407,71 @@ function animate() {
 
   // Suaviza a movimentação dos personagens remotos.
   for (const remote of remotePlayers.values()) {
-    remote.root.position.lerp(remote.targetPosition, 1 - Math.exp(-12 * delta));
-    const rotationDifference = Math.atan2(
-      Math.sin(remote.targetRotationY - remote.root.rotation.y),
-      Math.cos(remote.targetRotationY - remote.root.rotation.y)
-    );
-    remote.root.rotation.y += rotationDifference * (1 - Math.exp(-12 * delta));
+    const buffer = remote.positionBuffer;
+    const renderTime = performance.now() - 50;
+
+    // Mantém no buffer apenas as amostras necessárias.
+    while (
+      buffer.length > 2 &&
+      buffer[1].time <= renderTime
+    ) {
+      buffer.shift();
+    }
+
+    let interpolated = false;
+
+    if (buffer.length >= 2) {
+      const a = buffer[0];
+      const b = buffer[1];
+
+      if (renderTime >= a.time && renderTime <= b.time) {
+        const span = b.time - a.time;
+        const alpha = span > 0
+          ? THREE.MathUtils.clamp((renderTime - a.time) / span, 0, 1)
+          : 1;
+
+        remote.root.position.lerpVectors(
+          a.position,
+          b.position,
+          alpha
+        );
+
+        const angleDifference = Math.atan2(
+          Math.sin(b.rotationY - a.rotationY),
+          Math.cos(b.rotationY - a.rotationY)
+        );
+
+        remote.root.rotation.y =
+          a.rotationY + angleDifference * alpha;
+
+        interpolated = true;
+      } else if (renderTime < a.time) {
+        remote.root.position.copy(a.position);
+        remote.root.rotation.y = a.rotationY;
+        interpolated = true;
+      }
+    } else if (buffer.length === 1 && renderTime < buffer[0].time) {
+      remote.root.position.copy(buffer[0].position);
+      remote.root.rotation.y = buffer[0].rotationY;
+      interpolated = true;
+    }
+
+    // Se não houver amostras suficientes ou a rede atrasar,
+    // continua seguindo a última posição conhecida suavemente.
+    if (!interpolated) {
+      remote.root.position.lerp(
+        remote.targetPosition,
+        1 - Math.exp(-12 * delta)
+      );
+
+      const rotationDifference = Math.atan2(
+        Math.sin(remote.targetRotationY - remote.root.rotation.y),
+        Math.cos(remote.targetRotationY - remote.root.rotation.y)
+      );
+
+      remote.root.rotation.y +=
+        rotationDifference * (1 - Math.exp(-12 * delta));
+    }
     const crouchBones = [
       [remote.leftThighBone, -1.15],
       [remote.rightThighBone, -1.15],
