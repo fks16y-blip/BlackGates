@@ -1160,9 +1160,22 @@ function createRemotePlayer(playerId) {
 
   let remoteRightHand = null;
   let remoteHandSocket = null;
+  let remoteHipsBone = null;
+  let remoteLeftThighBone = null;
+  let remoteRightThighBone = null;
+  let remoteLeftShinBone = null;
+  let remoteRightShinBone = null;
   model.traverse((object) => {
     if (object.name === 'RightHand') remoteRightHand = object;
     if (object.name === 'Socket_RightHand') remoteHandSocket = object;
+    if (object.isBone) {
+      const boneName = object.name.toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (/(hips|pelvis)$/.test(boneName)) remoteHipsBone = object;
+      if (/leftupperleg|leftupleg|leftthigh|thigh_l|upleg_l/.test(boneName)) remoteLeftThighBone = object;
+      if (/rightupperleg|rightupleg|rightthigh|thigh_r|upleg_r/.test(boneName)) remoteRightThighBone = object;
+      if (/leftlowerleg|leftleg|leftshin|calf_l|lowerleg_l/.test(boneName) && !/upperleg|upleg|thigh/.test(boneName)) remoteLeftShinBone = object;
+      if (/rightlowerleg|rightleg|rightshin|calf_r|lowerleg_r/.test(boneName) && !/upperleg|upleg|thigh/.test(boneName)) remoteRightShinBone = object;
+    }
     if (object.isMesh) {
       object.material = remoteMaterial;
       object.castShadow = true;
@@ -1322,7 +1335,12 @@ function createRemotePlayer(playerId) {
     currentAction: idleAction || walkAction,
     targetPosition: new THREE.Vector3(),
     targetRotationY: 0,
-    moving: false, running: false,
+    moving: false, running: false, crouching: false,
+    hipsBone: remoteHipsBone,
+    leftThighBone: remoteLeftThighBone,
+    rightThighBone: remoteRightThighBone,
+    leftShinBone: remoteLeftShinBone,
+    rightShinBone: remoteRightShinBone,
     rightHand: remoteRightHand,
     pistol: remotePistol,
     flashlight: remoteFlashlight,
@@ -1381,6 +1399,7 @@ function updateRemotePlayerState(playerId, state) {
 
   remote.moving = state.moving === true;
   remote.running = state.running === true;
+  remote.crouching = state.crouching === true;
 
   if (remote.moving && !remote.userDataWalkDebug) {
     remote.userDataWalkDebug = true;
@@ -1533,6 +1552,67 @@ const firstItemSlot = document.querySelector("#itemBar .itemSlot");
 const pickupPistolButton = document.getElementById("pickupPistolButton");
 const secondItemSlot = document.querySelectorAll("#itemBar .itemSlot")[1];
 const pickupAmmoButton = document.getElementById("pickupAmmoButton");
+
+let flashlightAvailable = true;
+let flashlightPickupPending = false;
+let ammoAvailable = true;
+let ammoPickupPending = false;
+
+function grantFlashlightToLocalPlayer() {
+  hasFlashlight = true;
+  scene.remove(flashlightPickup);
+  flashlightPickup.visible = false;
+  pickupFlashlightButton.style.display = "none";
+
+  if (firstItemSlot) {
+    firstItemSlot.querySelector("span").textContent = "🔦";
+    firstItemSlot.setAttribute("aria-label", "Slot 1: Lanterna");
+    firstItemSlot.style.borderColor = "#8ed5ff";
+  }
+}
+
+function applyFlashlightAvailability(available, collectorId = null) {
+  flashlightAvailable = available;
+  flashlightPickupPending = false;
+
+  if (!available) {
+    if (collectorId && collectorId === multiplayerPlayerId) {
+      grantFlashlightToLocalPlayer();
+    } else if (!hasFlashlight) {
+      scene.remove(flashlightPickup);
+      flashlightPickup.visible = false;
+      pickupFlashlightButton.style.display = "none";
+    }
+  } else if (!hasFlashlight) {
+    scene.add(flashlightPickup);
+    flashlightPickup.visible = true;
+  }
+}
+
+function grantAmmoToLocalPlayer() {
+  const ammoToLoad = Math.min(50 - pistolMagazine, pistolReserve + 50);
+  pistolMagazine += ammoToLoad;
+  pistolReserve = Math.max(0, pistolReserve + 50 - ammoToLoad);
+  scene.remove(ammoBox);
+  pickupAmmoButton.style.display = "none";
+  updateAmmoUI();
+}
+
+function applyAmmoAvailability(available, collectorId = null) {
+  ammoAvailable = available;
+  ammoPickupPending = false;
+
+  if (!available) {
+    if (collectorId && collectorId === multiplayerPlayerId) {
+      grantAmmoToLocalPlayer();
+    } else {
+      scene.remove(ammoBox);
+      pickupAmmoButton.style.display = "none";
+    }
+  } else {
+    scene.add(ammoBox);
+  }
+}
 const ammoCounter = document.getElementById("ammoCounter");
 const shootButton = document.getElementById("shootButton");
 const reloadButton = document.getElementById("reloadButton");
@@ -1545,18 +1625,32 @@ function updateAmmoUI() {
 }
 
 pickupAmmoButton.addEventListener("click", () => {
-  if (!ammoBox.parent) return;
+  if (!ammoAvailable || ammoPickupPending || !ammoBox.parent) return;
+
   const d = Math.hypot(
     player.position.x - ammoBox.position.x,
     player.position.z - ammoBox.position.z
   );
   if (d > 1.8) return;
-  const ammoToLoad = Math.min(50 - pistolMagazine, pistolReserve + 50);
-  pistolMagazine += ammoToLoad;
-  pistolReserve = Math.max(0, pistolReserve + 50 - ammoToLoad);
-  scene.remove(ammoBox);
-  pickupAmmoButton.style.display = "none";
-  updateAmmoUI();
+
+  if (multiplayerRoomCode) {
+    if (!multiplayerSocket ||
+        multiplayerSocket.readyState !== WebSocket.OPEN) {
+      console.warn("Conexão multiplayer indisponível.");
+      return;
+    }
+    try {
+      multiplayerSocket.send(JSON.stringify({ type: "collectAmmo" }));
+      ammoPickupPending = true;
+      pickupAmmoButton.style.display = "none";
+    } catch (error) {
+      console.error("Erro ao solicitar munição:", error);
+    }
+    return;
+  }
+
+  ammoAvailable = false;
+  grantAmmoToLocalPlayer();
 });
 
 reloadButton.addEventListener("click", () => {
@@ -1720,25 +1814,32 @@ shootButton.addEventListener("pointerdown", (event) => {
 
 
 pickupFlashlightButton.addEventListener("click", () => {
-  if (hasFlashlight) return;
+  if (hasFlashlight || !flashlightAvailable || flashlightPickupPending) return;
 
   const distance = Math.hypot(
     player.position.x - flashlightPickup.position.x,
     player.position.z - flashlightPickup.position.z
   );
-
   if (distance > 1.8) return;
 
-  hasFlashlight = true;
-  scene.remove(flashlightPickup);
-  flashlightPickup.visible = false;
-  pickupFlashlightButton.style.display = "none";
-
-  if (firstItemSlot) {
-    firstItemSlot.querySelector("span").textContent = "🔦";
-    firstItemSlot.setAttribute("aria-label", "Slot 1: Lanterna");
-    firstItemSlot.style.borderColor = "#8ed5ff";
+  if (multiplayerRoomCode) {
+    if (!multiplayerSocket ||
+        multiplayerSocket.readyState !== WebSocket.OPEN) {
+      console.warn("Conexão multiplayer indisponível.");
+      return;
+    }
+    try {
+      multiplayerSocket.send(JSON.stringify({ type: "collectFlashlight" }));
+      flashlightPickupPending = true;
+      pickupFlashlightButton.style.display = "none";
+    } catch (error) {
+      console.error("Erro ao solicitar lanterna:", error);
+    }
+    return;
   }
+
+  flashlightAvailable = false;
+  grantFlashlightToLocalPlayer();
 });
 
 
@@ -1750,16 +1851,26 @@ pickupPistolButton.addEventListener("click", () => {
     player.position.x - pistolPickup.position.x,
     player.position.z - pistolPickup.position.z
   );
+
   if (distance > 1.8) return;
 
-  if (
-    multiplayerRoomCode &&
-    socket &&
-    socket.readyState === WebSocket.OPEN
-  ) {
-    pistolPickupPending = true;
-    pickupPistolButton.style.display = "none";
-    socket.send(JSON.stringify({ type: "collectPistol" }));
+  if (multiplayerRoomCode) {
+    if (
+      !multiplayerSocket ||
+      multiplayerSocket.readyState !== WebSocket.OPEN
+    ) {
+      console.warn("Não foi possível coletar: conexão multiplayer indisponível.");
+      return;
+    }
+
+    try {
+      multiplayerSocket.send(JSON.stringify({ type: "collectPistol" }));
+      pistolPickupPending = true;
+      pickupPistolButton.style.display = "none";
+    } catch (error) {
+      console.error("Erro ao solicitar a pistola:", error);
+    }
+
     return;
   }
 
@@ -2244,6 +2355,12 @@ function connectMultiplayer() {
         roomCodeDisplay.textContent = multiplayerRoomCode;
         createdRoomCode.style.display = 'block';
         multiplayerRoomInfo.textContent = 'Sala criada! Compartilhe o código.';
+        if (typeof message.flashlightAvailable === 'boolean') {
+          applyFlashlightAvailability(message.flashlightAvailable);
+        }
+        if (typeof message.ammoAvailable === 'boolean') {
+          applyAmmoAvailability(message.ammoAvailable);
+        }
         if (typeof message.roomLightsOn === 'boolean') {
           applyRoomLights(message.roomLightsOn);
     if (typeof message.pistolAvailable === 'boolean') {
@@ -2256,6 +2373,12 @@ function connectMultiplayer() {
         roomCodeDisplay.textContent = multiplayerRoomCode;
         createdRoomCode.style.display = 'block';
         multiplayerRoomInfo.textContent = 'Você entrou na sala.';
+        if (typeof message.flashlightAvailable === 'boolean') {
+          applyFlashlightAvailability(message.flashlightAvailable);
+        }
+        if (typeof message.ammoAvailable === 'boolean') {
+          applyAmmoAvailability(message.ammoAvailable);
+        }
         if (typeof message.roomLightsOn === 'boolean') {
           applyRoomLights(message.roomLightsOn);
     if (typeof message.pistolAvailable === 'boolean') {
@@ -2275,6 +2398,26 @@ function connectMultiplayer() {
       } else if (message.type === 'roomLights') {
         if (typeof message.roomLightsOn === 'boolean') {
           applyRoomLights(message.roomLightsOn);
+        }
+      } else if (message.type === 'flashlightAvailability') {
+        if (message.available === false && !message.playerId) {
+          flashlightPickupPending = false;
+          flashlightAvailable = false;
+          pickupFlashlightButton.style.display = 'none';
+        } else {
+          applyFlashlightAvailability(
+            message.available === true, message.playerId || null
+          );
+        }
+      } else if (message.type === 'ammoAvailability') {
+        if (message.available === false && !message.playerId) {
+          ammoPickupPending = false;
+          ammoAvailable = false;
+          pickupAmmoButton.style.display = 'none';
+        } else {
+          applyAmmoAvailability(
+            message.available === true, message.playerId || null
+          );
         }
       } else if (message.type === 'pistolAvailability') {
     applyPistolAvailability(
@@ -2614,6 +2757,7 @@ function animate() {
           yaw: cameraYaw,
           moving: inputLength > 0.12,
           running: running && inputLength > 0.12,
+          crouching,
           pistolEquipped,
           flashlightEquipped,
           supportFold: player.userData.backCameraRig?.userData.supportFold ?? 0.35,
@@ -2949,13 +3093,15 @@ function animate() {
   }
 
 
-  if (!hasFlashlight) {
+  if (!hasFlashlight && flashlightAvailable && !flashlightPickupPending) {
     const flashlightDistance = Math.hypot(
       player.position.x - flashlightPickup.position.x,
       player.position.z - flashlightPickup.position.z
     );
     pickupFlashlightButton.style.display =
       flashlightDistance < 1.8 ? "block" : "none";
+  } else {
+    pickupFlashlightButton.style.display = "none";
   }
 
   if (!hasPistol && pistolAvailable && !pistolPickupPending) {
@@ -2969,12 +3115,13 @@ function animate() {
     pickupPistolButton.style.display = "none";
   }
 
-  if (ammoBox.parent) {
+  if (ammoAvailable && !ammoPickupPending && ammoBox.parent) {
     const ammoDistance = Math.hypot(
       player.position.x - ammoBox.position.x,
       player.position.z - ammoBox.position.z
     );
-    pickupAmmoButton.style.display = ammoDistance < 1.8 ? "block" : "none";
+    pickupAmmoButton.style.display =
+      ammoDistance < 1.8 ? "block" : "none";
   } else {
     pickupAmmoButton.style.display = "none";
   }
@@ -2987,7 +3134,57 @@ function animate() {
       Math.cos(remote.targetRotationY - remote.root.rotation.y)
     );
     remote.root.rotation.y += rotationDifference * (1 - Math.exp(-12 * delta));
+    const crouchBones = [
+      [remote.leftThighBone, -1.15],
+      [remote.rightThighBone, -1.15],
+      [remote.leftShinBone, 1.90],
+      [remote.rightShinBone, 1.90]
+    ];
+
+    if (remote.crouchApplied) {
+      if (remote.hipsBone &&
+          remote.hipsBone.userData.remoteCrouchBaseY !== undefined) {
+        remote.hipsBone.position.y =
+          remote.hipsBone.userData.remoteCrouchBaseY;
+      }
+
+      for (const [bone] of crouchBones) {
+        if (bone?.userData.remoteCrouchOffset) {
+          bone.quaternion.multiply(
+            bone.userData.remoteCrouchOffset.clone().invert()
+          );
+          delete bone.userData.remoteCrouchOffset;
+        }
+      }
+    }
+
     remote.mixer.update(delta);
+
+    if (remote.crouching) {
+      if (remote.hipsBone) {
+        if (remote.hipsBone.userData.remoteCrouchBaseY === undefined) {
+          remote.hipsBone.userData.remoteCrouchBaseY =
+            remote.hipsBone.position.y;
+        }
+
+        remote.hipsBone.position.y =
+          remote.hipsBone.userData.remoteCrouchBaseY - 0.38;
+      }
+
+      for (const [bone, angle] of crouchBones) {
+        if (!bone) continue;
+
+        const offset = new THREE.Quaternion().setFromAxisAngle(
+          new THREE.Vector3(1, 0, 0),
+          angle
+        );
+
+        bone.quaternion.multiply(offset);
+        bone.userData.remoteCrouchOffset = offset;
+      }
+    }
+
+    remote.crouchApplied = remote.crouching;
   }
 
   renderer.render(scene, camera);
