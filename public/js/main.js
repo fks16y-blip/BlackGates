@@ -242,6 +242,18 @@ flashlightPickup.position.set(1.3, 0.13, 0);
 flashlightPickup.rotation.z = 0.12;
 scene.add(flashlightPickup);
 
+const flashlightGroundItems = [
+  flashlightPickup.clone(true),
+  flashlightPickup.clone(true)
+];
+flashlightGroundItems[0].position.set(1.3, 0.13, 0);
+flashlightGroundItems[1].position.set(1.3, 0.13, 1.8);
+flashlightGroundItems.forEach((item) => {
+  item.visible = true;
+  scene.add(item);
+});
+flashlightPickup.visible = false;
+
 let hasFlashlight = false;
 
 let flashlightEquipped = false;
@@ -316,6 +328,18 @@ pistolPickup.traverse((object) => {
 });
 scene.add(pistolPickup);
 
+const pistolGroundItems = [
+  pistolPickup.clone(true),
+  pistolPickup.clone(true)
+];
+pistolGroundItems[0].position.set(-1.3, 0.2, 0);
+pistolGroundItems[1].position.set(-1.3, 0.2, 1.8);
+pistolGroundItems.forEach((item) => {
+  item.visible = true;
+  scene.add(item);
+});
+pistolPickup.visible = false;
+
 let hasPistol = false;
 let pistolEquipped = false;
 let pistolAvailable = true;
@@ -336,17 +360,8 @@ function applyPistolAvailability(available, collectorId = null) {
   pistolAvailable = available;
   pistolPickupPending = false;
 
-  if (!available) {
-    if (collectorId && collectorId === multiplayerPlayerId) {
-      grantPistolToLocalPlayer();
-    } else {
-      scene.remove(pistolPickup);
-      pistolPickup.visible = false;
-      pickupPistolButton.style.display = "none";
-    }
-  } else if (!hasPistol) {
-    scene.add(pistolPickup);
-    pistolPickup.visible = true;
+  if (!available && collectorId === multiplayerPlayerId && !hasPistol) {
+    grantPistolToLocalPlayer();
   }
 }
 let pistolMagazine = 50;
@@ -374,6 +389,10 @@ ammoBox.traverse((o) => {
   }
 });
 scene.add(ammoBox);
+const ammoGroundItems = [ammoBox, ammoBox.clone(true)];
+ammoGroundItems[0].position.set(0, 0.18, 1.3);
+ammoGroundItems[1].position.set(0, 0.18, -1.3);
+scene.add(ammoGroundItems[1]);
 
 
 
@@ -1688,6 +1707,67 @@ let flashlightPickupPending = false;
 let ammoAvailable = true;
 let ammoPickupPending = false;
 
+let flashlightItemAvailability = [true, true];
+let pistolItemAvailability = [true, true];
+let ammoItemAvailability = [true, true];
+
+function nearestAvailableGroundItem(items, availability) {
+  let nearest = null;
+
+  for (let itemId = 0; itemId < items.length; itemId++) {
+    const item = items[itemId];
+    if (!availability[itemId] || !item || !item.parent) continue;
+
+    const distance = Math.hypot(
+      player.position.x - item.position.x,
+      player.position.z - item.position.z
+    );
+
+    if (!nearest || distance < nearest.distance) {
+      nearest = { itemId, distance };
+    }
+  }
+
+  return nearest;
+}
+
+function syncGroundItemList(items, availability, incoming) {
+  if (!Array.isArray(incoming) || incoming.length !== items.length) return;
+
+  availability.splice(0, availability.length,
+    ...incoming.map(value => value === true)
+  );
+
+  items.forEach((item, itemId) => {
+    if (availability[itemId]) {
+      if (!item.parent) scene.add(item);
+      item.visible = true;
+    } else {
+      scene.remove(item);
+      item.visible = false;
+    }
+  });
+}
+
+function syncGroundItemsFromRoom(message) {
+  syncGroundItemList(
+    flashlightGroundItems, flashlightItemAvailability,
+    message.flashlightItems
+  );
+  syncGroundItemList(
+    pistolGroundItems, pistolItemAvailability,
+    message.pistolItems
+  );
+  syncGroundItemList(
+    ammoGroundItems, ammoItemAvailability,
+    message.ammoItems
+  );
+
+  flashlightAvailable = flashlightItemAvailability.some(Boolean);
+  pistolAvailable = pistolItemAvailability.some(Boolean);
+  ammoAvailable = ammoItemAvailability.some(Boolean);
+}
+
 function grantFlashlightToLocalPlayer() {
   hasFlashlight = true;
   scene.remove(flashlightPickup);
@@ -1705,25 +1785,27 @@ function applyFlashlightAvailability(available, collectorId = null) {
   flashlightAvailable = available;
   flashlightPickupPending = false;
 
-  if (!available) {
-    if (collectorId && collectorId === multiplayerPlayerId) {
-      grantFlashlightToLocalPlayer();
-    } else if (!hasFlashlight) {
-      scene.remove(flashlightPickup);
-      flashlightPickup.visible = false;
-      pickupFlashlightButton.style.display = "none";
-    }
-  } else if (!hasFlashlight) {
-    scene.add(flashlightPickup);
-    flashlightPickup.visible = true;
+  if (!available && collectorId === multiplayerPlayerId && !hasFlashlight) {
+    grantFlashlightToLocalPlayer();
   }
 }
 
-function grantAmmoToLocalPlayer() {
+function grantAmmoToLocalPlayer(itemId = 0) {
   const ammoToLoad = Math.min(50 - pistolMagazine, pistolReserve + 50);
   pistolMagazine += ammoToLoad;
   pistolReserve = Math.max(0, pistolReserve + 50 - ammoToLoad);
-  scene.remove(ammoBox);
+
+  const selectedBox = ammoGroundItems[itemId];
+  if (selectedBox) {
+    scene.remove(selectedBox);
+    selectedBox.visible = false;
+  }
+
+  if (Number.isInteger(itemId) && itemId >= 0 && itemId < 2) {
+    ammoItemAvailability[itemId] = false;
+  }
+  ammoAvailable = ammoItemAvailability.some(Boolean);
+  ammoPickupPending = false;
   pickupAmmoButton.style.display = "none";
   updateAmmoUI();
 }
@@ -1732,15 +1814,8 @@ function applyAmmoAvailability(available, collectorId = null) {
   ammoAvailable = available;
   ammoPickupPending = false;
 
-  if (!available) {
-    if (collectorId && collectorId === multiplayerPlayerId) {
-      grantAmmoToLocalPlayer();
-    } else {
-      scene.remove(ammoBox);
-      pickupAmmoButton.style.display = "none";
-    }
-  } else {
-    scene.add(ammoBox);
+  if (!available && collectorId === multiplayerPlayerId) {
+    grantAmmoToLocalPlayer(0);
   }
 }
 const ammoCounter = document.getElementById("ammoCounter");
@@ -1755,13 +1830,13 @@ function updateAmmoUI() {
 }
 
 pickupAmmoButton.addEventListener("click", () => {
-  if (!ammoAvailable || ammoPickupPending || !ammoBox.parent) return;
+  if (!ammoAvailable || ammoPickupPending) return;
 
-  const d = Math.hypot(
-    player.position.x - ammoBox.position.x,
-    player.position.z - ammoBox.position.z
+  const nearest = nearestAvailableGroundItem(
+    ammoGroundItems, ammoItemAvailability
   );
-  if (d > 1.8) return;
+  if (!nearest || nearest.distance > 1.8) return;
+  const itemId = nearest.itemId;
 
   if (multiplayerRoomCode) {
     if (!multiplayerSocket ||
@@ -1770,7 +1845,7 @@ pickupAmmoButton.addEventListener("click", () => {
       return;
     }
     try {
-      multiplayerSocket.send(JSON.stringify({ type: "collectAmmo" }));
+      multiplayerSocket.send(JSON.stringify({ type: "collectAmmo", itemId }));
       ammoPickupPending = true;
       pickupAmmoButton.style.display = "none";
     } catch (error) {
@@ -1779,8 +1854,11 @@ pickupAmmoButton.addEventListener("click", () => {
     return;
   }
 
-  ammoAvailable = false;
-  grantAmmoToLocalPlayer();
+  ammoItemAvailability[itemId] = false;
+  scene.remove(ammoGroundItems[itemId]);
+  ammoGroundItems[itemId].visible = false;
+  ammoAvailable = ammoItemAvailability.some(Boolean);
+  grantAmmoToLocalPlayer(itemId);
 });
 
 reloadButton.addEventListener("click", () => {
@@ -1950,11 +2028,11 @@ shootButton.addEventListener("pointerdown", (event) => {
 pickupFlashlightButton.addEventListener("click", () => {
   if (hasFlashlight || !flashlightAvailable || flashlightPickupPending) return;
 
-  const distance = Math.hypot(
-    player.position.x - flashlightPickup.position.x,
-    player.position.z - flashlightPickup.position.z
+  const nearest = nearestAvailableGroundItem(
+    flashlightGroundItems, flashlightItemAvailability
   );
-  if (distance > 1.8) return;
+  if (!nearest || nearest.distance > 1.8) return;
+  const itemId = nearest.itemId;
 
   if (multiplayerRoomCode) {
     if (!multiplayerSocket ||
@@ -1963,7 +2041,7 @@ pickupFlashlightButton.addEventListener("click", () => {
       return;
     }
     try {
-      multiplayerSocket.send(JSON.stringify({ type: "collectFlashlight" }));
+      multiplayerSocket.send(JSON.stringify({ type: "collectFlashlight", itemId }));
       flashlightPickupPending = true;
       pickupFlashlightButton.style.display = "none";
     } catch (error) {
@@ -1972,7 +2050,10 @@ pickupFlashlightButton.addEventListener("click", () => {
     return;
   }
 
-  flashlightAvailable = false;
+  flashlightItemAvailability[itemId] = false;
+  scene.remove(flashlightGroundItems[itemId]);
+  flashlightGroundItems[itemId].visible = false;
+  flashlightAvailable = flashlightItemAvailability.some(Boolean);
   grantFlashlightToLocalPlayer();
 });
 
@@ -1981,12 +2062,11 @@ pickupFlashlightButton.addEventListener("click", () => {
 pickupPistolButton.addEventListener("click", () => {
   if (hasPistol || !pistolAvailable || pistolPickupPending) return;
 
-  const distance = Math.hypot(
-    player.position.x - pistolPickup.position.x,
-    player.position.z - pistolPickup.position.z
+  const nearest = nearestAvailableGroundItem(
+    pistolGroundItems, pistolItemAvailability
   );
-
-  if (distance > 1.8) return;
+  if (!nearest || nearest.distance > 1.8) return;
+  const itemId = nearest.itemId;
 
   if (multiplayerRoomCode) {
     if (
@@ -1998,7 +2078,7 @@ pickupPistolButton.addEventListener("click", () => {
     }
 
     try {
-      multiplayerSocket.send(JSON.stringify({ type: "collectPistol" }));
+      multiplayerSocket.send(JSON.stringify({ type: "collectPistol", itemId }));
       pistolPickupPending = true;
       pickupPistolButton.style.display = "none";
     } catch (error) {
@@ -2008,6 +2088,10 @@ pickupPistolButton.addEventListener("click", () => {
     return;
   }
 
+  pistolItemAvailability[itemId] = false;
+  scene.remove(pistolGroundItems[itemId]);
+  pistolGroundItems[itemId].visible = false;
+  pistolAvailable = pistolItemAvailability.some(Boolean);
   grantPistolToLocalPlayer();
 });
 
@@ -2501,6 +2585,7 @@ function connectMultiplayer() {
       applyPistolAvailability(message.pistolAvailable);
     }
         }
+      syncGroundItemsFromRoom(message);
       } else if (message.type === 'roomJoined') {
         multiplayerRoomCode = String(message.roomCode || message.code || joinRoomInput.value);
         multiplayerPlayerId = message.playerId || multiplayerPlayerId;
@@ -2527,6 +2612,7 @@ function connectMultiplayer() {
             }
           }
         }
+      syncGroundItemsFromRoom(message);
       } else if (message.type === 'playerJoined') {
         multiplayerRoomInfo.textContent = 'Outro jogador entrou na sala.';
       } else if (message.type === 'roomLights') {
@@ -2558,7 +2644,51 @@ function connectMultiplayer() {
       message.available === true,
       message.playerId || null
     );
-  } else if (message.type === 'shoot') {
+  } else if (message.type === 'itemAvailability') {
+        const itemType = message.itemType;
+        const itemId = Number(message.itemId);
+        const incoming = message.items;
+
+        if (itemType === 'flashlight') {
+          syncGroundItemList(
+            flashlightGroundItems, flashlightItemAvailability, incoming
+          );
+          flashlightAvailable = flashlightItemAvailability.some(Boolean);
+          flashlightPickupPending = false;
+
+          if (message.playerId === multiplayerPlayerId && !hasFlashlight) {
+            grantFlashlightToLocalPlayer();
+          }
+        } else if (itemType === 'pistol') {
+          syncGroundItemList(
+            pistolGroundItems, pistolItemAvailability, incoming
+          );
+          pistolAvailable = pistolItemAvailability.some(Boolean);
+          pistolPickupPending = false;
+
+          if (message.playerId === multiplayerPlayerId && !hasPistol) {
+            grantPistolToLocalPlayer();
+          }
+        } else if (itemType === 'ammo') {
+          syncGroundItemList(
+            ammoGroundItems, ammoItemAvailability, incoming
+          );
+          ammoAvailable = ammoItemAvailability.some(Boolean);
+          ammoPickupPending = false;
+
+          if (message.playerId === multiplayerPlayerId) {
+            grantAmmoToLocalPlayer(itemId);
+          }
+        }
+      } else if (message.type === 'pickupRejected') {
+        if (message.itemType === 'flashlight') {
+          flashlightPickupPending = false;
+        } else if (message.itemType === 'pistol') {
+          pistolPickupPending = false;
+        } else if (message.itemType === 'ammo') {
+          ammoPickupPending = false;
+        }
+      } else if (message.type === 'shoot') {
         playRemoteShot(message.playerId || message.id);
       } else if (message.type === 'sync') {
         const id = message.playerId || message.id;
@@ -3230,38 +3360,28 @@ function animate() {
   }
 
 
-  if (!hasFlashlight && flashlightAvailable && !flashlightPickupPending) {
-    const flashlightDistance = Math.hypot(
-      player.position.x - flashlightPickup.position.x,
-      player.position.z - flashlightPickup.position.z
-    );
-    pickupFlashlightButton.style.display =
-      flashlightDistance < 1.8 ? "block" : "none";
-  } else {
-    pickupFlashlightButton.style.display = "none";
-  }
+  const nearestFlashlight = nearestAvailableGroundItem(
+    flashlightGroundItems, flashlightItemAvailability
+  );
+  pickupFlashlightButton.style.display =
+    !hasFlashlight && !flashlightPickupPending &&
+    nearestFlashlight && nearestFlashlight.distance < 1.8
+      ? "block" : "none";
 
-  if (!hasPistol && pistolAvailable && !pistolPickupPending) {
-    const pistolDistance = Math.hypot(
-      player.position.x - pistolPickup.position.x,
-      player.position.z - pistolPickup.position.z
-    );
-    pickupPistolButton.style.display =
-      pistolDistance < 1.8 ? "block" : "none";
-  } else {
-    pickupPistolButton.style.display = "none";
-  }
+  const nearestPistol = nearestAvailableGroundItem(
+    pistolGroundItems, pistolItemAvailability
+  );
+  pickupPistolButton.style.display =
+    !hasPistol && !pistolPickupPending &&
+    nearestPistol && nearestPistol.distance < 1.8
+      ? "block" : "none";
 
-  if (ammoAvailable && !ammoPickupPending && ammoBox.parent) {
-    const ammoDistance = Math.hypot(
-      player.position.x - ammoBox.position.x,
-      player.position.z - ammoBox.position.z
-    );
-    pickupAmmoButton.style.display =
-      ammoDistance < 1.8 ? "block" : "none";
-  } else {
-    pickupAmmoButton.style.display = "none";
-  }
+  const nearestAmmo = nearestAvailableGroundItem(
+    ammoGroundItems, ammoItemAvailability
+  );
+  pickupAmmoButton.style.display =
+    !ammoPickupPending && nearestAmmo && nearestAmmo.distance < 1.8
+      ? "block" : "none";
 
   // Suaviza a movimentação dos personagens remotos.
   for (const remote of remotePlayers.values()) {
