@@ -1160,6 +1160,10 @@ function createRemotePlayer(playerId) {
 
   let remoteRightHand = null;
   let remoteHandSocket = null;
+  let remoteLeftUpperArm = null;
+  let remoteRightUpperArm = null;
+  let remoteLeftLowerArm = null;
+  let remoteRightLowerArm = null;
   let remoteHipsBone = null;
   let remoteLeftThighBone = null;
   let remoteRightThighBone = null;
@@ -1168,6 +1172,10 @@ function createRemotePlayer(playerId) {
   model.traverse((object) => {
     if (object.name === 'RightHand') remoteRightHand = object;
     if (object.name === 'Socket_RightHand') remoteHandSocket = object;
+    if (object.name === 'LeftUpperArm') remoteLeftUpperArm = object;
+    if (object.name === 'RightUpperArm') remoteRightUpperArm = object;
+    if (object.name === 'LeftLowerArm') remoteLeftLowerArm = object;
+    if (object.name === 'RightLowerArm') remoteRightLowerArm = object;
     if (object.isBone) {
       const boneName = object.name.toLowerCase().replace(/[^a-z0-9]/g, '');
       if (/(hips|pelvis)$/.test(boneName)) remoteHipsBone = object;
@@ -1203,7 +1211,7 @@ function createRemotePlayer(playerId) {
   remotePistol.visible = false;
   remotePistol.traverse((object) => {
     if (object.isMesh) object.castShadow = true;
-    if (object === muzzleFlash || object.name === muzzleFlash.name) object.visible = false;
+    if (object.isMesh && object.geometry === muzzleFlash.geometry) object.visible = false;
   });
 
   const remoteFlashlight = flashlightPickup.clone(true);
@@ -1342,6 +1350,13 @@ function createRemotePlayer(playerId) {
     leftShinBone: remoteLeftShinBone,
     rightShinBone: remoteRightShinBone,
     rightHand: remoteRightHand,
+    leftUpperArmBone: remoteLeftUpperArm,
+    rightUpperArmBone: remoteRightUpperArm,
+    leftLowerArmBone: remoteLeftLowerArm,
+    rightLowerArmBone: remoteRightLowerArm,
+    pistolEquipped: false,
+    aimPitch: 0,
+    aimYaw: 0,
     pistol: remotePistol,
     flashlight: remoteFlashlight,
     flashlightLight: remoteFlashlight.getObjectByProperty('type', 'SpotLight'),
@@ -1400,6 +1415,9 @@ function updateRemotePlayerState(playerId, state) {
   remote.moving = state.moving === true;
   remote.running = state.running === true;
   remote.crouching = state.crouching === true;
+  remote.pistolEquipped = state.pistolEquipped === true;
+  remote.aimPitch = Number.isFinite(state.aimPitch) ? state.aimPitch : 0;
+  remote.aimYaw = Number.isFinite(state.yaw) ? state.yaw : remote.targetRotationY;
 
   if (remote.moving && !remote.userDataWalkDebug) {
     remote.userDataWalkDebug = true;
@@ -2755,6 +2773,7 @@ function animate() {
           z: player.position.z,
           rotationY: player.rotation.y,
           yaw: cameraYaw,
+          aimPitch: cameraPitch,
           moving: inputLength > 0.12,
           running: running && inputLength > 0.12,
           crouching,
@@ -3159,6 +3178,57 @@ function animate() {
     }
 
     remote.mixer.update(delta);
+
+    // Pose de mira aplicada depois da animacao.
+    if (remote.pistolEquipped) {
+      const aimArmPitch = THREE.MathUtils.clamp(
+        remote.aimPitch - 0.28, -0.63, 1.02
+      );
+      const relativeAimYaw = Math.atan2(
+        Math.sin(remote.aimYaw - remote.root.rotation.y),
+        Math.cos(remote.aimYaw - remote.root.rotation.y)
+      );
+      const aimArmYaw = THREE.MathUtils.clamp(
+        relativeAimYaw, -Math.PI, 1.65
+      );
+
+      const applyRemotePistolPose = (bone, x, y, z) => {
+        if (!bone) return;
+        if (!bone.userData.remotePistolPoseBase) {
+          bone.userData.remotePistolPoseBase = bone.rotation.clone();
+        }
+        const base = bone.userData.remotePistolPoseBase;
+        bone.rotation.set(base.x + x, base.y + y, base.z + z);
+      };
+
+      applyRemotePistolPose(
+        remote.leftUpperArmBone, -0.90, -Math.PI / 2 + 0.35, 0.05
+      );
+      applyRemotePistolPose(remote.leftLowerArmBone, 0, 0, 0);
+      applyRemotePistolPose(
+        remote.rightUpperArmBone,
+        aimArmPitch - 0.90,
+        Math.PI / 2 + aimArmYaw,
+        -0.05
+      );
+      applyRemotePistolPose(
+        remote.rightLowerArmBone, aimArmPitch * 0.12, 0, 0
+      );
+    } else {
+      // RESTORE_REMOTE_PISTOL_POSE
+      for (const bone of [
+        remote.leftUpperArmBone,
+        remote.rightUpperArmBone,
+        remote.leftLowerArmBone,
+        remote.rightLowerArmBone
+      ]) {
+        const base = bone?.userData.remotePistolPoseBase;
+        if (base) {
+          bone.rotation.copy(base);
+          delete bone.userData.remotePistolPoseBase;
+        }
+      }
+    }
 
     if (remote.crouching) {
       if (remote.hipsBone) {
