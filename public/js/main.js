@@ -563,6 +563,12 @@ function enterX1Arena(options = {}) {
 
             x1ArenaGroup.position.set(x1ArenaCenter, 0, x1ArenaCenter);
       scene.add(x1ArenaGroup);
+
+      // Restaura os itens disponíveis dentro da arena X1.
+      syncGroundItemList(flashlightGroundItems, flashlightItemAvailability, flashlightItemAvailability);
+      syncGroundItemList(pistolGroundItems, pistolItemAvailability, pistolItemAvailability);
+      syncGroundItemList(ammoGroundItems, ammoItemAvailability, ammoItemAvailability);
+
       createX1RoundBarriers();
       setX1RoundBarriersVisible(x1RoundPhase === 'countdown');
       scene.background = new THREE.Color(0x080e18);
@@ -776,8 +782,8 @@ const flashlightGroundItems = [
   flashlightPickup.clone(true),
   flashlightPickup.clone(true)
 ];
-flashlightGroundItems[0].position.set(1.3, 0.13, 0);
-flashlightGroundItems[1].position.set(1.3, 0.13, 1.8);
+flashlightGroundItems[0].position.set(998.7, 0.13, 1000);
+flashlightGroundItems[1].position.set(998.7, 0.13, 1001.8);
 flashlightGroundItems.forEach((item) => {
   item.visible = true;
   scene.add(item);
@@ -862,8 +868,8 @@ const pistolGroundItems = [
   pistolPickup.clone(true),
   pistolPickup.clone(true)
 ];
-pistolGroundItems[0].position.set(-1.3, 0.2, 0);
-pistolGroundItems[1].position.set(-1.3, 0.2, 1.8);
+pistolGroundItems[0].position.set(1001.3, 0.2, 1000);
+pistolGroundItems[1].position.set(1001.3, 0.2, 1001.8);
 pistolGroundItems.forEach((item) => {
   item.visible = true;
   scene.add(item);
@@ -923,8 +929,8 @@ ammoBox.traverse((o) => {
 });
 scene.add(ammoBox);
 const ammoGroundItems = [ammoBox, ammoBox.clone(true)];
-ammoGroundItems[0].position.set(0, 0.18, 1.3);
-ammoGroundItems[1].position.set(0, 0.18, -1.3);
+ammoGroundItems[0].position.set(1000, 0.18, 1001.3);
+ammoGroundItems[1].position.set(1000, 0.18, 998.7);
 scene.add(ammoGroundItems[1]);
 
 
@@ -2776,7 +2782,6 @@ function resetX1LocalLoadout() {
 }
 
 pickupAmmoButton.addEventListener("click", () => {
-  if (x1ArenaActive) return;
   if (!ammoAvailable || ammoPickupPending) return;
 
   const nearest = nearestAvailableGroundItem(
@@ -2977,7 +2982,6 @@ shootButton.addEventListener("pointerdown", (event) => {
 
 
 pickupFlashlightButton.addEventListener("click", () => {
-  if (x1ArenaActive) return;
   if (hasFlashlight || !flashlightAvailable || flashlightPickupPending) return;
 
   const nearest = nearestAvailableGroundItem(
@@ -3012,7 +3016,6 @@ pickupFlashlightButton.addEventListener("click", () => {
 
 // Coleta da pistola e inventário do slot 2.
 pickupPistolButton.addEventListener("click", () => {
-  if (x1ArenaActive) return;
   if (hasPistol || !pistolAvailable || pistolPickupPending) return;
 
   const nearest = nearestAvailableGroundItem(
@@ -5027,7 +5030,6 @@ function animate() {
     flashlightGroundItems, flashlightItemAvailability
   );
   pickupFlashlightButton.style.display =
-    !x1ArenaActive &&
     !hasFlashlight && !flashlightPickupPending &&
     nearestFlashlight && nearestFlashlight.distance < 1.8
       ? "block" : "none";
@@ -5036,7 +5038,6 @@ function animate() {
     pistolGroundItems, pistolItemAvailability
   );
   pickupPistolButton.style.display =
-    !x1ArenaActive &&
     !hasPistol && !pistolPickupPending &&
     nearestPistol && nearestPistol.distance < 1.8
       ? "block" : "none";
@@ -5045,7 +5046,6 @@ function animate() {
     ammoGroundItems, ammoItemAvailability
   );
   pickupAmmoButton.style.display =
-    !x1ArenaActive &&
     !ammoPickupPending && nearestAmmo && nearestAmmo.distance < 1.8
       ? "block" : "none";
 
