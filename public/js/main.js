@@ -15,10 +15,16 @@ const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.outputColorSpace = THREE.SRGBColorSpace;
-renderer.domElement.style.touchAction = 'none';
+renderer.domElement.style.cssText =
+  'position:fixed;left:0;top:0;width:100vw;height:100vh;display:block;margin:0;padding:0;border:0;touch-action:none;';
+document.documentElement.style.cssText =
+  'width:100%;height:100%;margin:0;padding:0;overflow:hidden;background:#000;';
 document.body.style.cssText =
-  'margin:0;overflow:hidden;background:#000;touch-action:none;';
+  'position:fixed;left:0;top:0;width:100%;height:100%;margin:0;padding:0;overflow:hidden;background:#000;touch-action:none;';
 document.body.appendChild(renderer.domElement);
+
+
+
 
 // LUZES
 const hemisphereLight = new THREE.HemisphereLight(
@@ -72,7 +78,35 @@ function createWall(x, y, z, rotationY = 0) {
   scene.add(wall);
 }
 
-createWall(0, wallHeight / 2, -10);
+// BLACKGATES_X1_REAL_OPENING_V1
+// Parede traseira dividida para criar um vão real no portão X1.
+// A abertura fica centrada em x=-6.3, com 2.6 m de largura
+// e 3 m de altura, aberta desde o chão.
+
+// Trecho à esquerda da entrada: x de -10 até -7.6
+const x1WallLeft = new THREE.Mesh(
+  new THREE.PlaneGeometry(1.5, wallHeight),
+  wallMat
+);
+x1WallLeft.position.set(-9.25, wallHeight / 2, -10);
+scene.add(x1WallLeft);
+
+// Trecho à direita da entrada: x de -5 até 10
+const x1WallRight = new THREE.Mesh(
+  new THREE.PlaneGeometry(14.1, wallHeight),
+  wallMat
+);
+x1WallRight.position.set(2.95, wallHeight / 2, -10);
+scene.add(x1WallRight);
+
+// Trecho acima da entrada: 2.6 m de largura e 3 m de altura
+const x1WallTop = new THREE.Mesh(
+  new THREE.PlaneGeometry(4.4, wallHeight - 3),
+  wallMat
+);
+x1WallTop.position.set(-6.3, 4.5, -10);
+scene.add(x1WallTop);
+
 createWall(0, wallHeight / 2, 10, Math.PI);
 createWall(10, wallHeight / 2, 0, -Math.PI / 2);
 createWall(-10, wallHeight / 2, 0, Math.PI / 2);
@@ -99,6 +133,502 @@ const switchButton = new THREE.Mesh(
 switchButton.position.set(0, 0, 0.1);
 switchGroup.add(switchButton);
 scene.add(switchGroup);
+
+// BLACKGATES_X1_GATE_V1 — portão visual do modo PvP
+const x1Gate = new THREE.Group();
+x1Gate.name = 'BlackGatesX1Gate';
+x1Gate.position.set(-6.3, 0, -9.72);
+scene.add(x1Gate);
+
+const x1GateMetal = new THREE.MeshStandardMaterial({
+  color: 0x111923, metalness: 0.82, roughness: 0.3
+});
+const x1GateEdge = new THREE.MeshStandardMaterial({
+  color: 0x168bc1, metalness: 0.55, roughness: 0.28,
+  emissive: 0x06334c, emissiveIntensity: 1.2
+});
+const x1GateDoorMat = new THREE.MeshStandardMaterial({
+  color: 0x07111b, metalness: 0.65, roughness: 0.36
+});
+
+function x1GateBox(parent, w, h, d, x, y, z, material) {
+  const mesh = new THREE.Mesh(
+    new THREE.BoxGeometry(w, h, d), material
+  );
+  mesh.position.set(x, y, z);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  parent.add(mesh);
+  return mesh;
+}
+
+// Moldura
+x1GateBox(x1Gate, 0.18, 3.15, 0.24, -2.28, 1.575, 0, x1GateMetal);
+x1GateBox(x1Gate, 0.18, 3.15, 0.24,  2.28, 1.575, 0, x1GateMetal);
+x1GateBox(x1Gate, 4.72, 0.18, 0.24, 0, 3.06, 0, x1GateMetal);
+
+// Portas com pivôs para abrir para os lados
+const x1LeftDoor = new THREE.Group();
+x1LeftDoor.position.set(-2.12, 1.5, 0);
+x1Gate.add(x1LeftDoor);
+
+const x1RightDoor = new THREE.Group();
+x1RightDoor.position.set(2.12, 1.5, 0);
+x1Gate.add(x1RightDoor);
+
+x1GateBox(x1LeftDoor, 2.08, 2.88, 0.12, 1.04, 0, 0, x1GateDoorMat);
+x1GateBox(x1RightDoor, 2.08, 2.88, 0.12, -1.04, 0, 0, x1GateDoorMat);
+
+// Linhas luminosas das portas
+for (const side of [-1, 1]) {
+  const door = side < 0 ? x1LeftDoor : x1RightDoor;
+  x1GateBox(door, 0.035, 2.5, 0.035, side < 0 ? 1.04 : -1.04, 0, 0.085, x1GateEdge);
+  x1GateBox(door, 1.55, 0.035, 0.035, side < 0 ? 1.04 : -1.04, 0.68, 0.085, x1GateEdge);
+  x1GateBox(door, 1.55, 0.035, 0.035, side < 0 ? 1.04 : -1.04, -0.68, 0.085, x1GateEdge);
+}
+
+// Placa "PvP" feita com textura Canvas
+const x1SignCanvas = document.createElement('canvas');
+x1SignCanvas.width = 512;
+x1SignCanvas.height = 160;
+const x1SignCtx = x1SignCanvas.getContext('2d');
+x1SignCtx.fillStyle = '#050d16';
+x1SignCtx.fillRect(0, 0, 512, 160);
+x1SignCtx.strokeStyle = '#25bdff';
+x1SignCtx.lineWidth = 8;
+x1SignCtx.strokeRect(5, 5, 502, 150);
+x1SignCtx.fillStyle = '#e8f8ff';
+x1SignCtx.font = 'bold 86px Arial';
+x1SignCtx.textAlign = 'center';
+x1SignCtx.textBaseline = 'middle';
+x1SignCtx.fillText('PvP', 256, 83);
+
+const x1SignTexture = new THREE.CanvasTexture(x1SignCanvas);
+const x1Sign = new THREE.Mesh(
+  new THREE.PlaneGeometry(1.9, 0.58),
+  new THREE.MeshBasicMaterial({ map: x1SignTexture, side: THREE.DoubleSide })
+);
+x1Sign.position.set(0, 3.58, 0.02);
+x1Gate.add(x1Sign);
+
+
+// BLACKGATES_X1_PASSAGE_FIX_V1 — extensão de chão para atravessar o vão
+const x1PassageFloor = new THREE.Mesh(
+  new THREE.PlaneGeometry(4.4, 5.0),
+  floorMat
+);
+x1PassageFloor.rotation.x = -Math.PI / 2;
+x1PassageFloor.position.set(-6.3, 0.008, -12.5);
+scene.add(x1PassageFloor);
+
+// BLACKGATES_X1_CORRIDOR_WALLS_V1
+// Paredes externas para bloquear a visão para fora do mapa.
+// Mantém livre a passagem do portão até o fim do corredor.
+const x1CorridorWallMat = wallMat;
+
+// Parede lateral esquerda do corredor.
+const x1CorridorLeftWall = new THREE.Mesh(
+  new THREE.PlaneGeometry(5.0, wallHeight),
+  x1CorridorWallMat
+);
+x1CorridorLeftWall.rotation.y = Math.PI / 2;
+x1CorridorLeftWall.position.set(-8.5, wallHeight / 2, -12.5);
+scene.add(x1CorridorLeftWall);
+
+// Parede lateral direita do corredor.
+const x1CorridorRightWall = new THREE.Mesh(
+  new THREE.PlaneGeometry(5.0, wallHeight),
+  x1CorridorWallMat
+);
+x1CorridorRightWall.rotation.y = Math.PI / 2;
+x1CorridorRightWall.position.set(-4.1, wallHeight / 2, -12.5);
+scene.add(x1CorridorRightWall);
+
+// Parede de fundo: fecha a visão para além do corredor.
+const x1CorridorEndWall = new THREE.Mesh(
+  new THREE.PlaneGeometry(4.4, wallHeight),
+  x1CorridorWallMat
+);
+x1CorridorEndWall.position.set(-6.3, wallHeight / 2, -15.0);
+scene.add(x1CorridorEndWall);
+
+// BLACKGATES_X1_GATE_V1 — chão sem marcação azul
+
+// BLACKGATES_X1_ARENA_V1
+let x1GateOpen = false;
+let x1ArenaActive = false;
+let x1ArenaLoading = false;
+let x1ArenaGroup = null;
+let x1RoundBarriers = [];
+let x1RoundHud = null;
+let x1RoundPhase = 'waiting';
+let x1RoundCountdown = 0;
+let x1RoundNumber = 0;
+let x1RoundScores = {};
+let x1MatchFinished = false;
+let x1LastLoadoutResetRound = 0;
+
+function createX1RoundBarriers() {
+  if (!x1ArenaGroup) return;
+
+  for (const barrier of x1RoundBarriers) {
+    x1ArenaGroup.remove(barrier);
+    barrier.geometry?.dispose();
+    barrier.material?.dispose();
+  }
+  x1RoundBarriers = [];
+
+  const material = new THREE.MeshBasicMaterial({
+    color: 0x168cff,
+    transparent: true,
+    opacity: 0.22,
+    side: THREE.DoubleSide,
+    depthWrite: false
+  });
+
+  for (const centerX of [-4, 4]) {
+    const barrier = new THREE.Mesh(
+      new THREE.BoxGeometry(4.5, 3, 4.5),
+      material.clone()
+    );
+    barrier.position.set(centerX, 1.5, 0);
+    barrier.name = 'BlackGatesX1RoundBarrier';
+    x1ArenaGroup.add(barrier);
+    x1RoundBarriers.push(barrier);
+  }
+}
+
+function setX1RoundBarriersVisible(visible) {
+  for (const barrier of x1RoundBarriers) {
+    barrier.visible = visible;
+  }
+}
+
+function updateX1RoundHUD(message = {}) {
+  x1RoundPhase = message.phase || x1RoundPhase;
+  x1RoundCountdown = Number.isFinite(message.countdown)
+    ? message.countdown : x1RoundCountdown;
+  x1RoundNumber = Number.isFinite(message.round)
+    ? message.round : x1RoundNumber;
+  if (message.scores && typeof message.scores === 'object') {
+    x1RoundScores = message.scores;
+  }
+
+  if (!x1RoundHud) {
+    x1RoundHud = document.createElement('div');
+    x1RoundHud.id = 'x1RoundHud';
+    x1RoundHud.style.cssText = [
+      'position:fixed', 'top:12%', 'left:50%', 'transform:translateX(-50%)',
+      'z-index:9999', 'padding:12px 20px', 'border:1px solid #00cfff',
+      'border-radius:10px', 'background:rgba(3,12,28,.88)',
+      'color:#fff', 'font:700 18px Arial,sans-serif',
+      'text-align:center', 'white-space:pre-line', 'pointer-events:none',
+      'text-shadow:0 0 8px #0088ff', 'display:none'
+    ].join(';');
+    document.body.appendChild(x1RoundHud);
+  }
+
+  const scores = Object.entries(x1RoundScores)
+    .map(([id, score], index) =>
+      `Jogador ${index + 1}: ${score}`).join('  |  ');
+
+  if (x1RoundPhase === 'countdown') {
+    x1RoundHud.textContent =
+      `RODADA ${x1RoundNumber}\nCOMEÇA EM ${x1RoundCountdown}\n${scores}`;
+    x1RoundHud.style.display = 'block';
+    setX1RoundBarriersVisible(true);
+  } else if (x1RoundPhase === 'active') {
+    x1RoundHud.textContent = `RODADA ${x1RoundNumber}\nLUTEM!\n${scores}`;
+    x1RoundHud.style.display = 'block';
+    setX1RoundBarriersVisible(false);
+  } else if (x1RoundPhase === 'intermission') {
+    x1RoundHud.textContent = `FIM DA RODADA\n${scores}`;
+    x1RoundHud.style.display = 'block';
+    setX1RoundBarriersVisible(false);
+  } else if (x1RoundPhase === 'finished') {
+    x1RoundHud.textContent = `PARTIDA ENCERRADA\n${scores}`;
+    x1RoundHud.style.display = 'block';
+    setX1RoundBarriersVisible(false);
+  } else {
+    x1RoundHud.style.display = 'none';
+    setX1RoundBarriersVisible(false);
+  }
+}
+let x1HiddenWorldObjects = [];
+const x1ArenaCenter = 1000;
+
+function enterX1Arena(options = {}) {
+  if (x1ArenaActive || x1ArenaLoading) return;
+
+  // No multiplayer, só entra após a confirmação do servidor.
+  if (multiplayerRoomCode && options.confirmedByServer !== true) {
+    const status = document.getElementById('x1GateStatus');
+    if (status) status.textContent = 'AGUARDANDO PRONTO DOS DOIS JOGADORES';
+    return;
+  }
+
+  x1ArenaLoading = true;
+  const loading = document.getElementById('x1LoadingScreen');
+  if (loading) loading.classList.add('open');
+
+  const readyButton = document.getElementById('x1OpenButton');
+  if (readyButton) readyButton.style.display = 'none';
+
+  // Dá tempo para a tela de carregamento aparecer antes da transição.
+  requestAnimationFrame(() => {
+    setTimeout(() => {
+    try {
+      // Esconde o cenário antigo, mantendo o jogador e as luzes principais.
+      x1HiddenWorldObjects = [];
+      for (const object of [...scene.children]) {
+        if (
+          object === player ||
+          object === hemisphereLight ||
+          object === light ||
+          [...remotePlayers.values()].some((remote) => remote.root === object)
+        ) continue;
+
+        object.visible = false;
+        x1HiddenWorldObjects.push(object);
+      }
+
+      x1ArenaGroup = new THREE.Group();
+      x1ArenaGroup.name = 'BlackGatesX1WhiteArena';
+
+      const arenaFloor = new THREE.Mesh(
+        new THREE.PlaneGeometry(50, 50),
+        new THREE.MeshStandardMaterial({
+          color: 0x242b35,
+          roughness: 0.92,
+          metalness: 0.12,
+          side: THREE.DoubleSide
+        })
+      );
+      arenaFloor.rotation.x = -Math.PI / 2;
+      arenaFloor.position.y = 0;
+      x1ArenaGroup.add(arenaFloor);
+
+      // BLACKGATES_X1_DEPTH_GRID_V1 — linhas de profundidade no chão.
+      const depthGridPositions = [];
+      const depthGridSize = 50;
+      const depthGridStep = 2.5;
+      const depthGridHalf = depthGridSize / 2;
+
+      for (let i = -depthGridHalf; i <= depthGridHalf; i += depthGridStep) {
+        // Linhas paralelas ao eixo X.
+        depthGridPositions.push(
+          -depthGridHalf, 0.025, i,
+           depthGridHalf, 0.025, i
+        );
+
+        // Linhas paralelas ao eixo Z.
+        depthGridPositions.push(
+          i, 0.025, -depthGridHalf,
+          i, 0.025,  depthGridHalf
+        );
+      }
+
+      const depthGridGeometry = new THREE.BufferGeometry();
+      depthGridGeometry.setAttribute(
+        "position",
+        new THREE.Float32BufferAttribute(depthGridPositions, 3)
+      );
+
+      const depthGridMaterial = new THREE.LineBasicMaterial({
+        color: 0x536b80,
+        transparent: true,
+        opacity: 0.8,
+        toneMapped: false
+      });
+
+      const depthGrid = new THREE.LineSegments(
+        depthGridGeometry,
+        depthGridMaterial
+      );
+      depthGrid.name = "BlackGatesX1DepthGrid";
+      x1ArenaGroup.add(depthGrid);
+
+      const arenaWallMaterial = new THREE.MeshStandardMaterial({
+        color: 0x151d29,
+        roughness: 0.88,
+        metalness: 0.16,
+        side: THREE.DoubleSide
+      });
+
+      const arenaWallHeight = 50;
+      const arenaWallThickness = 0.3;
+
+      function addArenaWall(width, height, x, y, z, rotationY = 0) {
+        const wall = new THREE.Mesh(
+          new THREE.BoxGeometry(width, height, arenaWallThickness),
+          arenaWallMaterial
+        );
+        wall.position.set(x, y, z);
+        wall.rotation.y = rotationY;
+        x1ArenaGroup.add(wall);
+      }
+
+      addArenaWall(50, arenaWallHeight, 0, arenaWallHeight / 2, -25);
+      addArenaWall(50, arenaWallHeight, 0, arenaWallHeight / 2, 25);
+      addArenaWall(50, arenaWallHeight, -25, arenaWallHeight / 2, 0, Math.PI / 2);
+      addArenaWall(50, arenaWallHeight, 25, arenaWallHeight / 2, 0, Math.PI / 2);
+
+      // Teto da arena: fecha o cubo em 50 unidades de altura.
+      const arenaCeiling = new THREE.Mesh(
+        new THREE.PlaneGeometry(50, 50),
+        arenaWallMaterial
+      );
+      arenaCeiling.rotation.x = -Math.PI / 2;
+      arenaCeiling.position.set(0, 50, 0);
+      x1ArenaGroup.add(arenaCeiling);
+
+      // BLACKGATES_X1_NEON_EDGES_V2 — contorno nas 12 arestas.
+      const x1NeonCoreMaterial = new THREE.MeshBasicMaterial({
+        color: 0x00cfff,
+        toneMapped: false
+      });
+
+      const x1NeonGlowMaterial = new THREE.MeshBasicMaterial({
+        color: 0x0088ff,
+        transparent: true,
+        opacity: 0.28,
+        depthWrite: false,
+        toneMapped: false
+      });
+
+      function addX1NeonBeam(width, height, depth, x, y, z) {
+        const glow = new THREE.Mesh(
+          new THREE.BoxGeometry(
+            width + 0.10,
+            height + 0.10,
+            depth + 0.10
+          ),
+          x1NeonGlowMaterial
+        );
+        glow.position.set(x, y, z);
+        x1ArenaGroup.add(glow);
+
+        const core = new THREE.Mesh(
+          new THREE.BoxGeometry(width, height, depth),
+          x1NeonCoreMaterial
+        );
+        core.position.set(x, y, z);
+        x1ArenaGroup.add(core);
+      }
+
+      // BLACKGATES_X1_NEON_INNER_EDGES_V1
+      const edge = 24.82;
+      const edgeLength = 49.64;
+      const edgeY = 0.08;
+      const edgeTopY = 49.92;
+      const edgeThickness = 0.055;
+
+      // Quatro arestas inferiores: duas em X e duas em Z.
+      for (const z of [-edge, edge]) {
+        addX1NeonBeam(
+          edgeLength, edgeThickness, edgeThickness,
+          0, edgeY, z
+        );
+      }
+      for (const x of [-edge, edge]) {
+        addX1NeonBeam(
+          edgeThickness, edgeThickness, edgeLength,
+          x, edgeY, 0
+        );
+      }
+
+      // Quatro arestas superiores: contorno do teto.
+      for (const z of [-edge, edge]) {
+        addX1NeonBeam(
+          edgeLength, edgeThickness, edgeThickness,
+          0, edgeTopY, z
+        );
+      }
+      for (const x of [-edge, edge]) {
+        addX1NeonBeam(
+          edgeThickness, edgeThickness, edgeLength,
+          x, edgeTopY, 0
+        );
+      }
+
+      // Quatro arestas verticais nos cantos.
+      for (const x of [-edge, edge]) {
+        for (const z of [-edge, edge]) {
+          addX1NeonBeam(
+            edgeThickness, 50, edgeThickness,
+            x, 25, z
+          );
+        }
+      }
+
+            x1ArenaGroup.position.set(x1ArenaCenter, 0, x1ArenaCenter);
+      scene.add(x1ArenaGroup);
+      createX1RoundBarriers();
+      setX1RoundBarriersVisible(x1RoundPhase === 'countdown');
+      scene.background = new THREE.Color(0x080e18);
+      hemisphereLight.intensity = 1.25;
+      light.intensity = 1.1;
+
+      const spawn = options.spawn;
+      player.position.set(
+        Number.isFinite(spawn?.x) ? spawn.x : x1ArenaCenter,
+        Number.isFinite(spawn?.y) ? spawn.y : 0,
+        Number.isFinite(spawn?.z) ? spawn.z : x1ArenaCenter
+      );
+      player.rotation.y = 0;
+
+      // BLACKGATES_X1_CAMERA_ENTRY_V1
+      // Reposiciona a câmera dentro da arena ao entrar.
+      camera.position.set(
+        x1ArenaCenter,
+        2.2,
+        x1ArenaCenter + 4.5
+      );
+      camera.lookAt(
+        x1ArenaCenter,
+        1.35,
+        x1ArenaCenter - 5
+      );
+
+      x1ArenaActive = true;
+
+      const status = document.getElementById('x1GateStatus');
+      if (status) status.textContent = 'ARENA X1';
+      if (loading) loading.classList.remove('open');
+      x1ArenaLoading = false;
+    } catch (error) {
+      console.error('Falha ao carregar arena X1:', error);
+      if (loading) loading.classList.remove('open');
+      x1ArenaLoading = false;
+
+      // Restaura o cenário caso a criação da arena falhe.
+      for (const object of x1HiddenWorldObjects) {
+        object.visible = true;
+      }
+      x1HiddenWorldObjects = [];
+      scene.background = new THREE.Color(0x151922);
+    }
+    }, 900);
+  });
+}
+const x1GateRaycaster = new THREE.Raycaster();
+
+function setX1GateOpen(open) {
+  x1GateOpen = Boolean(open);
+  x1LeftDoor.rotation.y = x1GateOpen ? -1.25 : 0;
+  x1RightDoor.rotation.y = x1GateOpen ? 1.25 : 0;
+
+
+  const status = document.getElementById('x1GateStatus');
+  const openButton = document.getElementById('x1OpenGateButton');
+  if (status) status.textContent = x1GateOpen
+    ? 'PORTÃO ABERTO · ENTRE NA ÁREA'
+    : 'PORTÃO FECHADO';
+  if (openButton) openButton.textContent = x1GateOpen
+    ? 'FECHAR PORTÃO'
+    : 'ABRIR PORTÃO';
+}
+
 
 let roomLightsOn = true;
 const switchRaycaster = new THREE.Raycaster();
@@ -139,13 +669,13 @@ const mirror = new THREE.Group();
 mirror.position.set(0, 2.35, -9.88);
 
 const mirrorFrame = new THREE.Mesh(
-  new THREE.BoxGeometry(2.2, 3.8, 0.16),
+  new THREE.BoxGeometry(3.3, 3.8, 0.16),
   mirrorFrameMat
 );
 mirror.add(mirrorFrame);
 
 const mirrorSurface = new Reflector(
-  new THREE.PlaneGeometry(1.95, 3.55),
+  new THREE.PlaneGeometry(3.0, 3.55),
   {
     clipBias: 0.003,
     textureWidth: Math.min(window.innerWidth * 1.5, 1536),
@@ -351,7 +881,10 @@ function grantPistolToLocalPlayer() {
   pistolPickup.visible = false;
   pickupPistolButton.style.display = "none";
 
-  secondItemSlot.querySelector("span").textContent = "🔫";
+  const pistolIcon = secondItemSlot.querySelector("span");
+  pistolIcon.innerHTML =
+    '<img src="images/pistol-icon.png" alt="" style="display:block;width:28px;height:28px;object-fit:contain;margin:0 auto;position:relative" />';
+  pistolIcon.style.cssText = "display:flex;align-items:center;justify-content:center;width:100%;height:100%;font-size:0;opacity:1";
   secondItemSlot.setAttribute("aria-label", "Slot 2: Pistola");
   secondItemSlot.style.borderColor = "#ffcc80";
 }
@@ -1644,10 +2177,32 @@ ui.innerHTML = `
     <button id="multiplayerCloseButton" type="button">FECHAR</button>
   </div>
   <div id="stickBase"><div id="stickKnob"></div></div>
-  <button id="runButton">CORRER</button>
-  <button id="crouchButton">AGACHAR</button>
+  <button id="runButton" aria-label="Correr"><img src="images/run-icon.jpg" alt="" draggable="false"></button>
+  <button id="crouchButton" aria-label="Agachar"><img src="images/crouch-icon.jpg" alt="" draggable="false"></button>
   <button id="cameraSettingsButton" aria-label="Configuracoes">🔧</button>
   <div id="cameraSettingsPanel">
+    <section id="hudSettingsColumn" aria-label="Configurações do HUD">
+      <h3>INTERFACE</h3>
+      <button id="editHudButton" type="button">EDITAR HUD</button>
+      <div id="hudEditControls" style="display:none">
+        <p>Arraste o controle para mudar sua posição.</p>
+        <label for="hudElementSelect">Controle:</label>
+        <select id="hudElementSelect">
+          <option value="stickBase">Joystick</option>
+          <option value="runButton">Correr</option>
+          <option value="crouchButton">Agachar</option>
+          <option value="shootButton">Disparar</option>
+          <option value="reloadButton">Recarregar</option>
+          <option value="playerHPPanel">Vida / HP</option>
+        </select>
+        <label for="hudSizeSlider">Tamanho individual:</label>
+        <input id="hudSizeSlider" type="range" min="60" max="160" value="100" step="5">
+        <div id="hudSizeValue">100%</div>
+        <button id="saveHudButton" type="button">SALVAR HUD</button>
+        <button id="cancelHudButton" type="button">CANCELAR</button>
+        <button id="resetHudButton" type="button">RESTAURAR PADRÃO</button>
+      </div>
+    </section>
     <strong>CONFIGURAÇÕES</strong>
     <p>Distância da câmera</p>
     <input id="cameraDistanceSlider" type="range" min="1" max="10" step="0.5" value="4.5">
@@ -1707,16 +2262,304 @@ ui.innerHTML = `
   <button id="pickupPistolButton" type="button" style="display:none">PEGAR PISTOLA</button>
   <button id="pickupAmmoButton" type="button" style="display:none">PEGAR MUNIÇÃO +50</button>
   <div id="ammoCounter" style="display:none">50/50</div>
-  <button id="shootButton" type="button" style="display:none">DISPARAR</button>
-  <button id="reloadButton" type="button" style="display:none">RECARREGAR</button>
+  <button id="shootButton" type="button" style="display:none" aria-label="Disparar"><img src="images/shoot-icon.jpg" alt="" draggable="false"></button>
+  <button id="reloadButton" type="button" style="display:none" aria-label="Recarregar"><img src="images/reload-icon.jpg" alt="" draggable="false"></button>
+
+  <button id="trainingButton" type="button"
+    style="position:fixed;top:16%;left:50%;transform:translateX(-50%);z-index:30;padding:12px 24px;border:1px solid #00cfff;border-radius:10px;background:#101c2b;color:#fff;font-weight:bold">
+    TREINO
+  </button>
+  <button id="x1OpenButton" type="button">ABRIR PORTÃO</button>
+  <div id="x1LoadingScreen" role="status" aria-live="polite">
+    <div class="x1Loader"></div>
+    <h2>CARREGANDO MAPA...</h2>
+    <p>Preparando a arena X1</p>
+    <div class="x1Progress"><div class="x1ProgressFill"></div></div>
+  </div>
+  <div id="x1Panel" role="dialog" aria-label="Modo X1">
+    <h2>BLACK GATES <span>PvP</span></h2>
+    <p id="x1GateStatus">PORTÃO FECHADO</p>
+    <p class="x1Description">Abra o portão e entre na área de preparação.</p>
+    <button id="x1OpenGateButton" type="button">ABRIR PORTÃO</button>
+    <button id="x1ClosePanelButton" type="button">VOLTAR AO JOGO</button>
+  </div>
+
   <div id="helpText">JOYSTICK: MOVER · ARRASTE À DIREITA: OLHAR</div>
 `;
 document.body.appendChild(ui);
+
+
+// BLACKGATES_PLAYER_HP_BAR_V1
+const playerMaxHP = 100;
+let playerHP = playerMaxHP;
+
+const playerHPPanel = document.createElement("div");
+playerHPPanel.id = "playerHPPanel";
+playerHPPanel.style.cssText = [
+  "position:fixed",
+  "top:18px",
+  "left:7%",
+  "z-index:35",
+  "width:min(230px,65vw)",
+  "padding:10px 12px",
+  "box-sizing:border-box",
+  "background:rgba(8,14,24,0.88)",
+  "border:1px solid rgba(0,207,255,0.65)",
+  "border-radius:9px",
+  "color:#fff",
+  "font: bold 14px sans-serif",
+  "pointer-events:none"
+].join(";");
+
+playerHPPanel.innerHTML = `
+  <div style="display:flex;align-items:center;gap:8px;margin-bottom:7px">
+    <span style="color:#00cfff;letter-spacing:1px">HP</span>
+    <span id="playerHPText">100/100</span>
+  </div>
+  <div style="height:10px;background:#27313c;border-radius:5px;overflow:hidden">
+    <div id="playerHPFill" style="width:100%;height:100%;background:#35d07f;border-radius:5px;transition:width .18s,background .18s"></div>
+  </div>
+`;
+document.body.appendChild(playerHPPanel);
+
+function updatePlayerHPUI() {
+  const text = document.getElementById("playerHPText");
+  const fill = document.getElementById("playerHPFill");
+  if (!text || !fill) return;
+
+  const percent = Math.max(0, Math.min(100, playerHP / playerMaxHP * 100));
+  text.textContent = `${playerHP}/${playerMaxHP}`;
+  fill.style.width = `${percent}%`;
+  fill.style.background =
+    percent <= 25 ? "#ff394f" :
+    percent <= 50 ? "#ffb52e" : "#35d07f";
+
+  playerHPPanel.style.borderColor =
+    percent <= 25 ? "#ff394f" : "rgba(0,207,255,0.65)";
+}
+
+// Chame esta função sempre que o jogador receber dano.
+function damageLocalPlayer(amount) {
+  const damage = Number(amount);
+  if (!Number.isFinite(damage) || damage <= 0 || playerHP <= 0) return;
+
+  playerHP = Math.max(0, playerHP - Math.round(damage));
+  updatePlayerHPUI();
+
+  if (playerHP === 0) {
+    console.log("Jogador sem HP.");
+  }
+}
+
+// Útil para futuro sistema de cura ou reinício de treino.
+function restoreLocalPlayerHP() {
+  playerHP = playerMaxHP;
+  updatePlayerHPUI();
+}
+
+updatePlayerHPUI();
+
+
+// BLACKGATES_X1_GATE_V1 — controles do painel
+const x1Panel = document.getElementById('x1Panel');
+document.getElementById('x1OpenButton').addEventListener('click', () => {
+  if (x1ArenaActive || x1ArenaLoading) return;
+
+  const entryButton = document.getElementById('x1OpenButton');
+  if (entryButton) {
+    entryButton.textContent = multiplayerRoomCode ? 'PRONTO' : 'ENTRAR NA ARENA';
+  }
+
+  if (!x1GateOpen) {
+    setX1GateOpen(true);
+    return;
+  }
+
+  const inEntryLane =
+    player.position.x > -8.25 &&
+    player.position.x < -4.35 &&
+    player.position.z < -9.0;
+
+  if (inEntryLane) {
+    if (multiplayerRoomCode) {
+      if (!multiplayerSocket ||
+          multiplayerSocket.readyState !== WebSocket.OPEN) {
+        const status = document.getElementById('x1GateStatus');
+        if (status) status.textContent = 'MULTIPLAYER DESCONECTADO';
+        return;
+      }
+
+      multiplayerSocket.send(JSON.stringify({ type: 'x1Ready' }));
+      const status = document.getElementById('x1GateStatus');
+      if (status) status.textContent = 'AGUARDANDO CONFIRMAÇÃO DOS JOGADORES...';
+    } else {
+      enterX1Arena();
+    }
+  } else {
+    const status = document.getElementById('x1GateStatus');
+    if (status) status.textContent = 'ENTRE PELA PASSAGEM PARA FICAR PRONTO';
+  }
+});
+document.getElementById('x1ClosePanelButton').addEventListener('click', () => {
+  x1Panel.classList.remove('open');
+});
+document.getElementById('x1OpenGateButton').addEventListener('click', () => {
+  setX1GateOpen(!x1GateOpen);
+});
+
 
 const pistolCrosshair = document.createElement("div");
 pistolCrosshair.id = "pistolCrosshair";
 pistolCrosshair.setAttribute("aria-hidden", "true");
 document.body.appendChild(pistolCrosshair);
+
+
+// BLACKGATES_TRAINING_TARGET_V1
+const trainingButton = document.getElementById("trainingButton");
+const trainingRaycaster = new THREE.Raycaster();
+let trainingTarget = null;
+let trainingTargetHP = 100;
+let trainingTargetActive = false;
+
+const trainingHealthUI = document.createElement("div");
+trainingHealthUI.id = "trainingHealthUI";
+trainingHealthUI.style.cssText =
+  "position:fixed;top:23%;left:50%;transform:translateX(-50%);" +
+  "z-index:30;display:none;color:white;background:#101820;" +
+  "border:1px solid #00cfff;border-radius:8px;padding:8px 14px;" +
+  "font:bold 15px sans-serif;text-align:center;pointer-events:none";
+document.body.appendChild(trainingHealthUI);
+
+function updateTrainingHealthUI() {
+  if (!trainingTargetActive) {
+    trainingHealthUI.style.display = "none";
+    return;
+  }
+  trainingHealthUI.style.display = "block";
+  trainingHealthUI.textContent =
+    trainingTargetHP > 0
+      ? `ALVO DE TREINO: ${trainingTargetHP}/100 HP`
+      : "ALVO ELIMINADO — TOQUE EM TREINO PARA REINICIAR";
+}
+
+function spawnTrainingTarget() {
+  if (trainingTarget) {
+    scene.remove(trainingTarget);
+    trainingTarget.traverse(obj => {
+      if (obj.geometry) obj.geometry.dispose();
+      if (obj.material) {
+        for (const mat of Array.isArray(obj.material)
+          ? obj.material : [obj.material]) mat.dispose();
+      }
+    });
+  }
+
+  trainingTarget = new THREE.Group();
+  trainingTarget.name = "BlackGatesTrainingTarget";
+
+  const bodyMat = new THREE.MeshStandardMaterial({
+    color: 0xe23b45, roughness: 0.7
+  });
+  const headMat = new THREE.MeshStandardMaterial({
+    color: 0xf0c8a0, roughness: 0.8
+  });
+  const darkMat = new THREE.MeshStandardMaterial({
+    color: 0x202b38, roughness: 0.8
+  });
+
+  const torso = new THREE.Mesh(
+    new THREE.BoxGeometry(0.65, 0.9, 0.35), bodyMat
+  );
+  torso.position.y = 1.15;
+  torso.userData.trainingHitbox = true;
+  trainingTarget.add(torso);
+
+  const head = new THREE.Mesh(
+    new THREE.SphereGeometry(0.23, 16, 12), headMat
+  );
+  head.position.y = 1.82;
+  head.userData.trainingHitbox = true;
+  trainingTarget.add(head);
+
+  for (const x of [-0.42, 0.42]) {
+    const arm = new THREE.Mesh(
+      new THREE.BoxGeometry(0.18, 0.75, 0.22), bodyMat
+    );
+    arm.position.set(x, 1.18, 0);
+    arm.userData.trainingHitbox = true;
+    trainingTarget.add(arm);
+  }
+
+  for (const x of [-0.19, 0.19]) {
+    const leg = new THREE.Mesh(
+      new THREE.BoxGeometry(0.22, 0.75, 0.25), darkMat
+    );
+    leg.position.set(x, 0.42, 0);
+    leg.userData.trainingHitbox = true;
+    trainingTarget.add(leg);
+  }
+
+  // Coloca o alvo a quatro metros, na direção horizontal da câmera.
+  const forward = new THREE.Vector3();
+  camera.getWorldDirection(forward);
+  forward.y = 0;
+  if (forward.lengthSq() < 0.001) forward.set(0, 0, -1);
+  forward.normalize();
+
+  trainingTarget.position.set(
+    player.position.x + forward.x * 4,
+    0,
+    player.position.z + forward.z * 4
+  );
+
+  // O alvo fica virado para o jogador.
+  trainingTarget.rotation.y = Math.atan2(
+    player.position.x - trainingTarget.position.x,
+    player.position.z - trainingTarget.position.z
+  );
+
+  scene.add(trainingTarget);
+  trainingTargetHP = 100;
+  trainingTargetActive = true;
+  updateTrainingHealthUI();
+}
+
+trainingButton.addEventListener("click", () => {
+  if (x1ArenaActive || x1ArenaLoading) return;
+  spawnTrainingTarget();
+});
+
+function damageTrainingTargetFromAim() {
+  if (!trainingTargetActive || !trainingTarget || trainingTargetHP <= 0) return;
+
+  // Disparo pelo centro da câmera: acompanha a mira.
+  camera.updateMatrixWorld(true);
+  trainingRaycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+  trainingRaycaster.far = 100;
+
+  const hitboxes = [];
+  trainingTarget.traverse(obj => {
+    if (obj.isMesh && obj.userData.trainingHitbox) hitboxes.push(obj);
+  });
+
+  const hits = trainingRaycaster.intersectObjects(hitboxes, false);
+  if (!hits.length) return;
+
+  const distance = camera.position.distanceTo(hits[0].point);
+
+  let damage = 7;
+  if (distance <= 1.5) damage = 17;
+  else if (distance <= 2.0) damage = 9;
+
+  trainingTargetHP = Math.max(0, trainingTargetHP - damage);
+  updateTrainingHealthUI();
+
+  if (trainingTargetHP === 0) {
+    trainingTargetActive = false;
+    updateTrainingHealthUI();
+  }
+}
+
 
 const pickupFlashlightButton = document.getElementById("pickupFlashlightButton");
 const firstItemSlot = document.querySelector("#itemBar .itemSlot");
@@ -1844,6 +2687,51 @@ const ammoCounter = document.getElementById("ammoCounter");
 const shootButton = document.getElementById("shootButton");
 const reloadButton = document.getElementById("reloadButton");
 
+// MULTITOUCH_ITEM_ACTIVATION_ADAPTER
+// Permite ativar botões por pointerdown enquanto outro dedo move o joystick,
+// mantendo os handlers click existentes e chamadas programáticas como .click().
+function enableItemMultitouch(element) {
+  if (!element || element.dataset.multitouchEnabled === "1") return;
+  element.dataset.multitouchEnabled = "1";
+
+  let activatingFromPointer = false;
+  let suppressClickUntil = 0;
+
+  element.addEventListener("pointerdown", (event) => {
+    if (event.pointerType === "mouse" && event.button !== 0) return;
+    if (event.isPrimary === false && event.pointerType === "mouse") return;
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    activatingFromPointer = true;
+    try {
+      element.click();
+    } finally {
+      activatingFromPointer = false;
+      suppressClickUntil = Date.now() + 700;
+    }
+  }, { passive: false });
+
+  element.addEventListener("click", (event) => {
+    if (activatingFromPointer) return;
+    if (event.isTrusted && Date.now() < suppressClickUntil) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    }
+  }, true);
+}
+
+[
+  pickupAmmoButton,
+  pickupFlashlightButton,
+  pickupPistolButton,
+  firstItemSlot,
+  secondItemSlot,
+  ...document.querySelectorAll("#itemBar .itemSlot")
+].forEach(enableItemMultitouch);
+
+
 function updateAmmoUI() {
   ammoCounter.textContent = `${pistolMagazine}/${pistolReserve}`;
   ammoCounter.style.display = pistolEquipped ? "block" : "none";
@@ -1851,7 +2739,44 @@ function updateAmmoUI() {
   reloadButton.style.display = pistolEquipped ? "block" : "none";
 }
 
+function resetX1LocalLoadout() {
+  hasPistol = false;
+  pistolEquipped = false;
+  pistolPickup.visible = false;
+  scene.remove(pistolPickup);
+  pistolCrosshair.style.display = "none";
+  pistolMagazine = 50;
+  pistolReserve = 50;
+  pistolPickupPending = false;
+  pickupPistolButton.style.display = "none";
+
+  hasFlashlight = false;
+  flashlightEquipped = false;
+  flashlightPickup.visible = false;
+  scene.remove(flashlightPickup);
+  flashlightLight.visible = false;
+  flashlightBeam.visible = false;
+  flashlightPickupPending = false;
+  pickupFlashlightButton.style.display = "none";
+
+  const pistolIcon = secondItemSlot.querySelector("span");
+  if (pistolIcon) pistolIcon.textContent = "+";
+  secondItemSlot.setAttribute("aria-label", "Slot de item 2");
+  secondItemSlot.style.borderColor = "rgba(190,210,235,.7)";
+
+  const flashlightIcon = firstItemSlot.querySelector("span");
+  if (flashlightIcon) flashlightIcon.textContent = "+";
+  firstItemSlot.setAttribute("aria-label", "Slot de item 1");
+  firstItemSlot.style.background = "rgba(12,19,31,.78)";
+  firstItemSlot.style.borderColor = "rgba(190,210,235,.7)";
+
+  ammoPickupPending = false;
+  pickupAmmoButton.style.display = "none";
+  updateAmmoUI();
+}
+
 pickupAmmoButton.addEventListener("click", () => {
+  if (x1ArenaActive) return;
   if (!ammoAvailable || ammoPickupPending) return;
 
   const nearest = nearestAvailableGroundItem(
@@ -1883,7 +2808,10 @@ pickupAmmoButton.addEventListener("click", () => {
   grantAmmoToLocalPlayer(itemId);
 });
 
-reloadButton.addEventListener("click", () => {
+reloadButton.addEventListener("pointerdown", (event) => {
+  if (event.pointerType === "mouse" && event.button !== 0) return;
+  event.preventDefault();
+  event.stopPropagation();
   if (!pistolEquipped || pistolReloading ||
       pistolMagazine >= 50 || pistolReserve <= 0) return;
 
@@ -1952,6 +2880,7 @@ shootButton.addEventListener("pointerdown", (event) => {
   if (!pistolEquipped || pistolMagazine <= 0) return;
 
   pistolMagazine--;
+  damageTrainingTargetFromAim();
   updateAmmoUI();
   if (multiplayerRoomCode && multiplayerSocket &&
       multiplayerSocket.readyState === WebSocket.OPEN) {
@@ -2048,6 +2977,7 @@ shootButton.addEventListener("pointerdown", (event) => {
 
 
 pickupFlashlightButton.addEventListener("click", () => {
+  if (x1ArenaActive) return;
   if (hasFlashlight || !flashlightAvailable || flashlightPickupPending) return;
 
   const nearest = nearestAvailableGroundItem(
@@ -2082,6 +3012,7 @@ pickupFlashlightButton.addEventListener("click", () => {
 
 // Coleta da pistola e inventário do slot 2.
 pickupPistolButton.addEventListener("click", () => {
+  if (x1ArenaActive) return;
   if (hasPistol || !pistolAvailable || pistolPickupPending) return;
 
   const nearest = nearestAvailableGroundItem(
@@ -2236,17 +3167,36 @@ style.textContent = `
   }
   #shootButton {
     display:none; position:fixed; right:28px; bottom:205px;
-    width:76px; height:76px; border-radius:50%;
-    border:2px solid white; background:rgba(165,45,35,.88);
+    width:76px; height:76px; padding:0; overflow:hidden;
+    border-radius:50%; box-sizing:border-box;
+    border:2px solid white; background:rgba(0,0,0,.88);
     color:white; font:bold 13px Arial,sans-serif;
     z-index:25; touch-action:none; user-select:none;
   }
+
+  #shootButton img {
+    position:absolute;
+    left:50%;
+    top:50%;
+    transform:translate(-50%,-50%);
+    width:48px;
+    height:48px;
+    object-fit:contain;
+    pointer-events:none;
+    user-select:none;
+  }
   #reloadButton {
     display:none; position:fixed; right:22px; bottom:295px;
-    padding:12px 14px; border-radius:12px;
-    border:2px solid white; background:rgba(35,105,65,.95);
-    color:white; font:bold 13px Arial,sans-serif;
-    z-index:25; touch-action:manipulation;
+    width:64px; height:64px; padding:0; overflow:hidden;
+    border-radius:50%; box-sizing:border-box;
+    border:2px solid white; background:rgba(0,0,0,.88);
+    color:white; font:bold 11px Arial,sans-serif;
+    align-items:center; justify-content:center;
+    text-align:center; z-index:25; touch-action:none;
+  }
+  #reloadButton img {
+    display:block; width:44px; height:44px;
+    object-fit:contain; pointer-events:none; user-select:none;
   }
   #stickBase {
     position:fixed; left:25px; bottom:35px;
@@ -2264,17 +3214,41 @@ style.textContent = `
   }
   #runButton {
     position:fixed; right:25px; bottom:42px;
-    padding:17px 20px; border-radius:14px;
-    border:2px solid white; background:rgba(25,95,170,.85);
-    color:white; font-weight:bold; font-size:15px;
-    z-index:10; touch-action:none;
+    width:64px; height:64px; padding:0;
+    border-radius:50%; box-sizing:border-box;
+    border:2px solid white; background:rgba(0,0,0,.88);
+    color:white; font-weight:bold; font-size:11px;
+    display:flex; align-items:center; justify-content:center;
+    text-align:center; z-index:10; touch-action:none;
+    overflow:hidden;
+  }
+
+  #runButton img {
+    display:block;
+    width:44px;
+    height:44px;
+    object-fit:contain;
+    pointer-events:none;
+    user-select:none;
   }
   #crouchButton {
     position:fixed; right:25px; bottom:125px;
-    padding:14px 16px; border-radius:14px;
-    border:2px solid white; background:rgba(65,75,90,.9);
-    color:white; font-weight:bold; font-size:13px;
-    z-index:10; touch-action:none;
+    width:64px; height:64px; padding:0;
+    border-radius:50%; box-sizing:border-box;
+    border:2px solid white; background:rgba(0,0,0,.88);
+    color:white; font-weight:bold; font-size:10px;
+    display:flex; align-items:center; justify-content:center;
+    text-align:center; z-index:10; touch-action:none;
+    overflow:hidden;
+  }
+
+  #crouchButton img {
+    display:block;
+    width:44px;
+    height:44px;
+    object-fit:contain;
+    pointer-events:none;
+    user-select:none;
   }
   #crouchButton.active { background:rgba(190,125,45,.95); }
   #runButton.active { background:rgba(25,180,90,.95); }
@@ -2285,18 +3259,166 @@ style.textContent = `
     font-size:25px; z-index:30;
   }
   #cameraSettingsPanel {
-    display:none; position:fixed; top:76px; right:16px;
-    width:min(270px, calc(100vw - 32px)); padding:18px;
-    box-sizing:border-box; border-radius:16px;
-    background:rgba(17,23,34,.97); color:white;
-    font:14px Arial,sans-serif; z-index:31;
+    display: none;
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100vh;
+    height: 100dvh;
+    max-height: 100dvh;
+    overflow-y: auto;
+    overflow-x: hidden;
+    overscroll-behavior: contain;
+    box-sizing: border-box;
+    padding: 24px 0 calc(24px + env(safe-area-inset-bottom));
+    border-radius: 0;
+    background:
+      linear-gradient(to right,
+        transparent 65.9%,
+        #526176 65.9%,
+        #526176 66%,
+        transparent 66%),
+      rgba(17,23,34,.98);
+    color: white;
+    font: 16px Arial, sans-serif;
+    z-index: 100;
   }
-  #cameraSettingsPanel.open { display:block; }
+  #cameraSettingsPanel.open {
+    display: grid;
+    grid-template-columns: minmax(0, 66fr) minmax(0, 34fr);
+    align-content: start;
+  }
+  #cameraSettingsPanel {
+    max-width: 100vw;
+    touch-action: pan-y;
+  }
+
+
+  #hudSettingsColumn {
+    grid-column: 1;
+    align-self: start;
+    min-width: 0;
+    margin: 24px;
+    padding: 16px;
+    box-sizing: border-box;
+    border: 1px solid #28394d;
+    border-radius: 12px;
+    background: rgba(11,17,27,.72);
+  }
+
+  #hudSettingsColumn h3 {
+    margin: 0 0 14px;
+    color: #cbd7e5;
+    font-size: 14px;
+    letter-spacing: 1.5px;
+  }
+
+  #hudSettingsColumn button {
+    width: 100%;
+    min-height: 44px;
+    margin: 6px 0;
+    padding: 10px;
+    border: 1px solid #40536a;
+    border-radius: 8px;
+    background: #283448;
+    color: white;
+    font-weight: 600;
+    box-sizing: border-box;
+  }
+
+  #cameraSettingsPanel > * {
+    max-width: 100%;
+  }
+
+  #cameraSettingsPanel > * { grid-column:2; min-width:0; margin-left:20px; margin-right:20px; }
+  #cameraSettingsPanel > * {
+    grid-column: 2;
+    width: auto;
+    max-width: 100%;
+    min-width: 0;
+    margin-left: 20px;
+    margin-right: 20px;
+    box-sizing: border-box;
+  }
+
+  /* O editor fica na coluna esquerda; as outras configurações ficam à direita. */
+  #cameraSettingsPanel > #hudSettingsColumn {
+    grid-column: 1;
+    min-width: 0;
+  }
+
+  /* Durante a edição, o fundo do painel deixa os toques passarem para o jogo. */
+  #cameraSettingsPanel.hud-editing {
+    pointer-events: none;
+  }
+
+  #cameraSettingsPanel.hud-editing > * {
+    pointer-events: auto;
+  }
+
+  /* Os controles editáveis ficam acima da camada visual do painel. */
+  body.hud-editing #stickBase,
+  body.hud-editing #runButton,
+  body.hud-editing #crouchButton,
+  body.hud-editing #shootButton,
+  body.hud-editing #reloadButton,
+  body.hud-editing #playerHPPanel {
+    z-index: 2000 !important;
+    touch-action: none;
+  }
+
+  body.hud-editing #playerHPPanel {
+    pointer-events: auto !important;
+  }
+
+  #cameraSettingsPanel svg,
+  #cameraSettingsPanel input,
+  #cameraSettingsPanel button {
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+
+  #cameraSettingsPanel input[type="range"] {
+    width: 100%;
+    min-width: 0;
+  }
+
+  #cameraSettingsPanel #supportPreview {
+    width: 100%;
+    height: auto;
+  }
+
+  #cameraSettingsPanel button:not(#cameraSettingsClose) {
+    min-height: 38px;
+    padding: 8px 12px;
+    font-size: 15px;
+    font-weight: 600;
+    border-radius: 7px;
+  }
+
+  #cameraSettingsPanel #cameraSettingsClose {
+    margin-top: 24px;
+  }
+
+  #cameraSettingsPanel #cameraSettingsClose {
+    width: calc(100% - 40px);
+    min-height: 44px;
+    margin-top: 8px;
+    border-radius: 9px;
+    background: #283448;
+    color: white;
+    font-size: 16px;
+  }
+
   #cameraDistanceSlider { width:100%; }
   #cameraDistanceValue { margin:10px 0; text-align:center; }
   #cameraSettingsClose {
-    width:100%; padding:10px; border-radius:9px;
-    background:#283448; color:white;
+    width:100%;
+    padding:14px;
+    border-radius:9px;
+    background:#283448;
+    color:white;
+    font-size:16px;
   }
 
   #multiplayerButton {
@@ -2335,6 +3457,70 @@ style.textContent = `
   .multiplayerDivider { height:1px; margin:15px 0; background:#294054; }
   #multiplayerRoomInfo { margin-top:10px; text-align:center; color:#a8e6bd; }
   #multiplayerCloseButton { background:#293448 !important; }
+
+  /* BLACKGATES_X1_GATE_V1 */
+  #x1OpenButton {
+    display: none; position: fixed; left: 50%; bottom: 110px;
+    transform: translateX(-50%); z-index: 115;
+    padding: 14px 22px; border: 1px solid #32c8ff;
+    border-radius: 12px; background: rgba(5,24,39,.97);
+    color: #eaf9ff; font: bold 14px Arial,sans-serif;
+    letter-spacing: .5px; touch-action: manipulation;
+    box-shadow: 0 0 18px rgba(0,157,255,.25);
+  }
+  #x1OpenButton.nearby { display: block; }
+  #x1LoadingScreen {
+    display: none; position: fixed; inset: 0; z-index: 999;
+    align-items: center; justify-content: center; flex-direction: column;
+    background: #f4f6f8; color: #17212b;
+    font: bold 18px Arial,sans-serif; text-align: center;
+  }
+  #x1LoadingScreen.open { display: flex; }
+  #x1LoadingScreen h2 { font-size: 20px; letter-spacing: 1px; }
+  #x1LoadingScreen p { font-size: 13px; font-weight: normal; }
+  .x1Loader {
+    width: 42px; height: 42px; border-radius: 50%;
+    border: 4px solid #c9d1d8; border-top-color: #168bc1;
+    animation: x1Spin .8s linear infinite;
+  }
+  @keyframes x1Spin { to { transform: rotate(360deg); } }
+  .x1Progress {
+    width: min(260px, 72vw); height: 8px; margin-top: 12px;
+    overflow: hidden; border-radius: 10px; background: #d5dce2;
+  }
+  .x1ProgressFill {
+    width: 35%; height: 100%; border-radius: inherit;
+    background: #168bc1;
+    animation: x1ProgressMove 1s ease-in-out infinite alternate;
+  }
+  @keyframes x1ProgressMove {
+    from { transform: translateX(0); }
+    to { transform: translateX(185%); }
+  }
+  #x1Panel {
+    display: none; position: fixed; z-index: 120;
+    left: 50%; top: 50%; transform: translate(-50%,-50%);
+    width: min(330px,calc(100vw - 32px)); box-sizing: border-box;
+    padding: 22px; border: 1px solid #269ed4; border-radius: 17px;
+    background: linear-gradient(145deg,rgba(13,28,45,.98),rgba(3,9,17,.99));
+    box-shadow: 0 0 28px rgba(0,157,255,.22);
+    color: #f1f7ff; font: 14px Arial,sans-serif; text-align: center;
+  }
+  #x1Panel.open { display: block; }
+  #x1Panel h2 { margin: 0 0 18px; font-size: 21px; letter-spacing: 1px; }
+  #x1Panel h2 span { color: #32c8ff; }
+  #x1GateStatus { color: #65d5ff; font-weight: bold; }
+  #x1Panel .x1Description { color: #c3d2df; line-height: 1.5; }
+  #x1Panel button {
+    display: block; width: 100%; margin-top: 12px; padding: 13px;
+    border: 1px solid #2daee5; border-radius: 9px;
+    background: #09253a; color: white; font-weight: bold;
+    touch-action: manipulation;
+  }
+  #x1Panel #x1ClosePanelButton {
+    border-color: #526171; background: #182330;
+  }
+
   #skinsButton {
     position:fixed; left:12px; top:42%;
     padding:13px 10px; border:1px solid #72baff;
@@ -2432,8 +3618,10 @@ function setCrouching(value) {
   crouchButton.textContent = value ? 'AGACHADO' : 'AGACHAR';
 }
 
-crouchButton.addEventListener('click', event => {
+crouchButton.addEventListener('pointerdown', event => {
+  if (event.pointerType === 'mouse' && event.button !== 0) return;
   event.preventDefault();
+  event.stopPropagation();
   setCrouching(!crouching);
 });
 
@@ -2452,6 +3640,230 @@ const supportHeightValue = document.getElementById('supportHeightValue');
 const supportTiltValue = document.getElementById('supportTiltValue');
 const supportSaveButton = document.getElementById('supportSaveButton');
 const supportResetButton = document.getElementById('supportResetButton');
+
+// Editor independente do HUD: posições e tamanhos são guardados localmente.
+(() => {
+  const editButton = document.getElementById('editHudButton');
+  const controls = document.getElementById('hudEditControls');
+  const saveButton = document.getElementById('saveHudButton');
+  const cancelButton = document.getElementById('cancelHudButton');
+  const resetButton = document.getElementById('resetHudButton');
+  const select = document.getElementById('hudElementSelect');
+  const sizeSlider = document.getElementById('hudSizeSlider');
+  const sizeValue = document.getElementById('hudSizeValue');
+  const panel = document.getElementById('cameraSettingsPanel');
+  const storageKey = 'blackGatesHudLayoutV1';
+
+  const elements = {
+    stickBase: document.getElementById('stickBase'),
+    runButton: document.getElementById('runButton'),
+    crouchButton: document.getElementById('crouchButton'),
+    shootButton: document.getElementById('shootButton'),
+    reloadButton: document.getElementById('reloadButton'),
+    playerHPPanel: document.getElementById('playerHPPanel')
+  };
+
+  if (!editButton || !controls || !saveButton || !cancelButton ||
+      !resetButton || !select || !sizeSlider || !sizeValue ||
+      Object.values(elements).some(el => !el)) {
+    console.warn('Editor HUD: elementos necessários não encontrados.');
+    return;
+  }
+
+  let editing = false;
+  let dragTarget = null;
+  let dragPointer = null;
+  let dragOffsetX = 0;
+  let dragOffsetY = 0;
+  let beforeEdit = null;
+  const originalDisplays = {};
+
+  function readLayout() {
+    const result = {};
+    for (const [id, el] of Object.entries(elements)) {
+      const r = el.getBoundingClientRect();
+      result[id] = {
+        x: Math.max(0, Math.min(1, r.left / innerWidth)),
+        y: Math.max(0, Math.min(1, r.top / innerHeight)),
+        scale: Number(el.dataset.hudScale || 1)
+      };
+    }
+    return result;
+  }
+
+  function applyLayout(layout) {
+    for (const [id, el] of Object.entries(elements)) {
+      const item = layout && layout[id];
+      if (!item || !Number.isFinite(item.x) ||
+          !Number.isFinite(item.y)) continue;
+
+      el.style.left = `${Math.max(0, Math.min(1, item.x)) * 100}%`;
+      el.style.top = `${Math.max(0, Math.min(1, item.y)) * 100}%`;
+      el.style.right = 'auto';
+      el.style.bottom = 'auto';
+
+      const scale = Math.max(0.6, Math.min(1.6, Number(item.scale) || 1));
+      el.dataset.hudScale = String(scale);
+      el.style.transform = `scale(${scale})`;
+      el.style.transformOrigin = 'top left';
+    }
+  }
+
+  function selectedElement() {
+    return elements[select.value];
+  }
+
+  function refreshSize() {
+    const el = selectedElement();
+    const scale = Number(el.dataset.hudScale || 1);
+    sizeSlider.value = String(Math.round(scale * 100));
+    sizeValue.textContent = `${Math.round(scale * 100)}%`;
+  }
+
+  function beginEditing() {
+    if (editing) return;
+    editing = true;
+    panel.classList.add('hud-editing');
+    document.body.classList.add('hud-editing');
+    beforeEdit = readLayout();
+
+    for (const [id, el] of Object.entries(elements)) {
+      originalDisplays[id] = el.style.display;
+      if (id === 'shootButton' || id === 'reloadButton') {
+        el.style.display = 'block';
+      }
+      el.style.outline = '2px dashed #ffd54a';
+      el.style.outlineOffset = '3px';
+    }
+
+    controls.style.display = 'block';
+    editButton.textContent = 'EDITANDO HUD';
+    editButton.setAttribute('aria-pressed', 'true');
+    if (typeof releaseStick === 'function') releaseStick();
+    refreshSize();
+  }
+
+  function endEditing() {
+    editing = false;
+    dragTarget = null;
+    dragPointer = null;
+    panel.classList.remove('hud-editing');
+    document.body.classList.remove('hud-editing');
+
+    for (const [id, el] of Object.entries(elements)) {
+      el.style.outline = '';
+      el.style.outlineOffset = '';
+      if (id in originalDisplays) el.style.display = originalDisplays[id];
+    }
+
+    controls.style.display = 'none';
+    editButton.textContent = 'EDITAR HUD';
+    editButton.setAttribute('aria-pressed', 'false');
+  }
+
+  editButton.addEventListener('click', () => {
+    if (!editing) beginEditing();
+  });
+
+  select.addEventListener('change', refreshSize);
+
+  sizeSlider.addEventListener('input', () => {
+    if (!editing) return;
+    const el = selectedElement();
+    const scale = Number(sizeSlider.value) / 100;
+    el.dataset.hudScale = String(scale);
+    el.style.transform = `scale(${scale})`;
+    el.style.transformOrigin = 'top left';
+    sizeValue.textContent = `${sizeSlider.value}%`;
+  });
+
+  document.addEventListener('pointerdown', event => {
+    if (!editing) return;
+    const target = event.target.closest
+      ? event.target.closest('#stickBase, #runButton, #crouchButton, #shootButton, #reloadButton, #playerHPPanel')
+      : null;
+    if (!target || !Object.values(elements).includes(target)) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+    event.stopImmediatePropagation();
+
+    dragTarget = target;
+    dragPointer = event.pointerId;
+    const rect = target.getBoundingClientRect();
+    dragOffsetX = event.clientX - rect.left;
+    dragOffsetY = event.clientY - rect.top;
+    try { target.setPointerCapture(event.pointerId); } catch (_) {}
+  }, true);
+
+  document.addEventListener('pointermove', event => {
+    if (!editing || !dragTarget || event.pointerId !== dragPointer) return;
+    event.preventDefault();
+    event.stopPropagation();
+
+    const width = dragTarget.offsetWidth * Number(dragTarget.dataset.hudScale || 1);
+    const height = dragTarget.offsetHeight * Number(dragTarget.dataset.hudScale || 1);
+    const x = Math.max(0, Math.min(innerWidth - Math.min(width, innerWidth),
+      event.clientX - dragOffsetX));
+    const y = Math.max(0, Math.min(innerHeight - Math.min(height, innerHeight),
+      event.clientY - dragOffsetY));
+
+    dragTarget.style.left = `${(x / innerWidth) * 100}%`;
+    dragTarget.style.top = `${(y / innerHeight) * 100}%`;
+    dragTarget.style.right = 'auto';
+    dragTarget.style.bottom = 'auto';
+  }, true);
+
+  function stopDrag(event) {
+    if (event && dragPointer !== null && event.pointerId !== dragPointer) return;
+    dragTarget = null;
+    dragPointer = null;
+  }
+  document.addEventListener('pointerup', stopDrag, true);
+  document.addEventListener('pointercancel', stopDrag, true);
+
+  saveButton.addEventListener('click', () => {
+    try {
+      localStorage.setItem(storageKey, JSON.stringify(readLayout()));
+      endEditing();
+    } catch (error) {
+      console.error('Não foi possível salvar o HUD:', error);
+      alert('Não foi possível salvar o HUD neste aparelho.');
+    }
+  });
+
+  cancelButton.addEventListener('click', () => {
+    if (beforeEdit) applyLayout(beforeEdit);
+    endEditing();
+  });
+
+  resetButton.addEventListener('click', () => {
+    try { localStorage.removeItem(storageKey); } catch (_) {}
+    for (const el of Object.values(elements)) {
+      el.style.left = '';
+      el.style.top = '';
+      el.style.right = '';
+      el.style.bottom = '';
+      el.style.transform = '';
+      el.style.transformOrigin = '';
+      delete el.dataset.hudScale;
+    }
+    playerHPPanel.style.left = '7%';
+    playerHPPanel.style.top = '18px';
+    playerHPPanel.style.right = 'auto';
+    playerHPPanel.style.bottom = 'auto';
+    beforeEdit = readLayout();
+    refreshSize();
+  });
+
+  try {
+    const saved = localStorage.getItem(storageKey);
+    if (saved) applyLayout(JSON.parse(saved));
+  } catch (error) {
+    console.warn('Layout salvo do HUD inválido; usando posições padrão.', error);
+  }
+})();
+
 
 const defaultSupportSettings = { fold: 35, height: 0, tilt: 0 };
 let savedSupportSettings = { ...defaultSupportSettings };
@@ -2513,13 +3925,22 @@ function updateSupportControls() {
   slider.addEventListener('input', updateSupportControls);
 });
 
+const supportStorageKey = 'blackGatesSupportSettingsV1';
+
 supportSaveButton.addEventListener('click', () => {
   savedSupportSettings = {
     fold: Number(supportFoldSlider.value),
     height: Number(supportHeightSlider.value),
     tilt: Number(supportTiltSlider.value)
   };
-  supportSaveButton.textContent = 'POSIÇÃO SALVA';
+
+  try {
+    localStorage.setItem(supportStorageKey, JSON.stringify(savedSupportSettings));
+    supportSaveButton.textContent = 'POSIÇÃO SALVA';
+  } catch (error) {
+    console.warn('Não foi possível salvar a posição do suporte.', error);
+    supportSaveButton.textContent = 'ERRO AO SALVAR';
+  }
 });
 
 function applySupportSettings(settings) {
@@ -2529,12 +3950,59 @@ function applySupportSettings(settings) {
   updateSupportControls();
 }
 
+try {
+  const stored = localStorage.getItem(supportStorageKey);
+  if (stored) {
+    const parsed = JSON.parse(stored);
+    const valid =
+      Number.isFinite(parsed.fold) && parsed.fold >= 0 && parsed.fold <= 100 &&
+      Number.isFinite(parsed.height) && parsed.height >= -30 && parsed.height <= 30 &&
+      Number.isFinite(parsed.tilt) && parsed.tilt >= -45 && parsed.tilt <= 45;
+
+    if (valid) {
+      savedSupportSettings = {
+        fold: parsed.fold,
+        height: parsed.height,
+        tilt: parsed.tilt
+      };
+    }
+  }
+} catch (error) {
+  console.warn('Configuração salva do suporte inválida; usando padrão.', error);
+}
+
 supportResetButton.addEventListener('click', () => {
   applySupportSettings(defaultSupportSettings);
+  savedSupportSettings = { ...defaultSupportSettings };
+
+  try {
+    localStorage.setItem(supportStorageKey, JSON.stringify(defaultSupportSettings));
+    supportSaveButton.textContent = 'SALVAR POSIÇÃO';
+  } catch (error) {
+    console.warn('Não foi possível salvar o padrão do suporte.', error);
+  }
 });
 
-updateSupportControls();
+applySupportSettings(savedSupportSettings);
 
+
+
+const editHudButton = document.getElementById('editHudButton');
+const hudEditControls = document.getElementById('hudEditControls');
+const saveHudButton = document.getElementById('saveHudButton');
+const cancelHudButton = document.getElementById('cancelHudButton');
+
+editHudButton.addEventListener('click', () => {
+  hudEditControls.style.display = 'block';
+});
+
+saveHudButton.addEventListener('click', () => {
+  hudEditControls.style.display = 'none';
+});
+
+cancelHudButton.addEventListener('click', () => {
+  hudEditControls.style.display = 'none';
+});
 
 cameraSettingsButton.addEventListener('click', () => {
   cameraSettingsPanel.classList.toggle('open');
@@ -2591,6 +4059,7 @@ function connectMultiplayer() {
         setMultiplayerStatus('Conectado ao servidor', '#8cf0ad');
       } else if (message.type === 'roomCreated') {
         multiplayerRoomCode = String(message.roomCode || message.code || '');
+        restoreLocalPlayerHP();
         multiplayerPlayerId = message.playerId || multiplayerPlayerId;
         roomCodeDisplay.textContent = multiplayerRoomCode;
         createdRoomCode.style.display = 'block';
@@ -2610,6 +4079,7 @@ function connectMultiplayer() {
       syncGroundItemsFromRoom(message);
       } else if (message.type === 'roomJoined') {
         multiplayerRoomCode = String(message.roomCode || message.code || joinRoomInput.value);
+        restoreLocalPlayerHP();
         multiplayerPlayerId = message.playerId || multiplayerPlayerId;
         roomCodeDisplay.textContent = multiplayerRoomCode;
         createdRoomCode.style.display = 'block';
@@ -2710,8 +4180,71 @@ function connectMultiplayer() {
         } else if (message.itemType === 'ammo') {
           ammoPickupPending = false;
         }
+            } else if (message.type === 'playerHP') {
+        const receivedHP = Number(message.hp);
+        if (Number.isFinite(receivedHP)) {
+          playerHP = Math.max(0, Math.min(playerMaxHP, Math.round(receivedHP)));
+          updatePlayerHPUI();
+          if (playerHP === 0) {
+            multiplayerRoomInfo.textContent = 'Você foi derrotado! (respawn ainda não implementado)';
+          }
+        }
       } else if (message.type === 'shoot') {
         playRemoteShot(message.playerId || message.id);
+      } else if (message.type === 'x1ReadyUpdate') {
+        const readyCount = Array.isArray(message.readyPlayers)
+          ? message.readyPlayers.length
+          : 0;
+        const status = document.getElementById('x1GateStatus');
+        if (status) {
+          status.textContent = message.message ||
+            `X1: ${readyCount}/2 JOGADORES PRONTOS`;
+        }
+        multiplayerRoomInfo.textContent = message.message ||
+          `X1: ${readyCount}/2 jogadores prontos.`;
+      } else if (message.type === 'x1Start') {
+        const spawn = message.spawns?.[multiplayerPlayerId];
+        if (spawn) {
+          enterX1Arena({
+            confirmedByServer: true,
+            spawn
+          });
+        } else {
+          const status = document.getElementById('x1GateStatus');
+          if (status) status.textContent = 'ERRO: POSIÇÃO X1 NÃO RECEBIDA';
+        }
+      } else if (message.type === 'x1RoundState') {
+        updateX1RoundHUD(message);
+        if (message.phase === 'countdown' && Number(message.round) > 0 &&
+            Number(message.round) !== x1LastLoadoutResetRound) {
+          x1LastLoadoutResetRound = Number(message.round);
+          resetX1LocalLoadout();
+        }
+        const spawn = message.spawns?.[multiplayerPlayerId];
+        if (spawn && x1ArenaActive) {
+          player.position.set(spawn.x, spawn.y || 0, spawn.z);
+          player.rotation.y = multiplayerPlayerId === Object.keys(message.spawns)[0]
+            ? Math.PI / 2 : -Math.PI / 2;
+          restoreLocalPlayerHP();
+        }
+      } else if (message.type === 'x1RoundEnd') {
+        updateX1RoundHUD({
+          phase: 'intermission',
+          scores: message.scores
+        });
+        multiplayerRoomInfo.textContent = message.matchOver
+          ? 'Partida decidida!'
+          : 'Rodada encerrada! Próxima rodada em instantes.';
+      } else if (message.type === 'x1MatchEnd') {
+        x1MatchFinished = true;
+        updateX1RoundHUD({
+          phase: 'finished',
+          scores: message.scores
+        });
+        multiplayerRoomInfo.textContent =
+          message.winnerId === multiplayerPlayerId
+            ? 'VOCÊ VENCEU O X1!'
+            : 'Você perdeu o X1.';
       } else if (message.type === 'sync') {
         const id = message.playerId || message.id;
         const state = message.state || message;
@@ -2872,13 +4405,48 @@ document.querySelectorAll('.skinCategory').forEach(button => {
   });
 });
 
-cameraDistanceSlider.addEventListener('input', () => {
-  const distance = Number(cameraDistanceSlider.value);
+const cameraDistanceStorageKey = 'blackGatesCameraDistanceV1';
+
+function applyCameraDistance(value) {
+  const distance = THREE.MathUtils.clamp(Number(value), 1, 10);
+  cameraDistanceSlider.value = String(distance);
   camera.fov = THREE.MathUtils.clamp(defaultCameraFov * (4.5 / distance), 25, 95);
   camera.updateProjectionMatrix();
   cameraDistanceValue.textContent =
     distance < 3 ? 'Perto' : distance > 6.5 ? 'Longe' : 'Normal';
+}
+
+cameraDistanceSlider.addEventListener('input', () => {
+  applyCameraDistance(cameraDistanceSlider.value);
 });
+
+cameraDistanceSlider.addEventListener('change', () => {
+  try {
+    localStorage.setItem(
+      cameraDistanceStorageKey,
+      String(Number(cameraDistanceSlider.value))
+    );
+  } catch (error) {
+    console.warn('Não foi possível salvar a distância da câmera.', error);
+  }
+});
+
+try {
+  const storedDistance = localStorage.getItem(cameraDistanceStorageKey);
+  if (storedDistance !== null) {
+    const distance = Number(storedDistance);
+    if (Number.isFinite(distance) && distance >= 1 && distance <= 10) {
+      applyCameraDistance(distance);
+    } else {
+      applyCameraDistance(4.5);
+    }
+  } else {
+    applyCameraDistance(cameraDistanceSlider.value);
+  }
+} catch (error) {
+  console.warn('Não foi possível restaurar a distância da câmera.', error);
+  applyCameraDistance(cameraDistanceSlider.value);
+}
 
 
 let stickX = 0;
@@ -2937,8 +4505,10 @@ function setRunning(value) {
   running = value;
   runButton.classList.toggle('active', value);
 }
-runButton.addEventListener('click', event => {
+runButton.addEventListener('pointerdown', event => {
+  if (event.pointerType === 'mouse' && event.button !== 0) return;
   event.preventDefault();
+  event.stopPropagation();
   setRunning(!running);
 });
 
@@ -2947,6 +4517,7 @@ renderer.domElement.addEventListener('pointerdown', event => {
   switchPointer.x = (event.clientX / window.innerWidth) * 2 - 1;
   switchPointer.y = -(event.clientY / window.innerHeight) * 2 + 1;
   switchRaycaster.setFromCamera(switchPointer, camera);
+
   if (switchRaycaster.intersectObjects(switchGroup.children, false).length > 0) {
     event.preventDefault();
     toggleRoomLights();
@@ -2996,6 +4567,28 @@ let walkTime = 0;
 
 function animate() {
   requestAnimationFrame(animate);
+  // Mostrar o botão apenas quando o jogador estiver perto da entrada X1.
+  const x1Distance = Math.hypot(
+    player.position.x - (-6.3),
+    player.position.z - (x1GateOpen ? -10.0 : -8.45)
+  );
+  const x1Button = document.getElementById('x1OpenButton');
+  if (x1Button) {
+    const inEntryLane =
+      player.position.x > -8.25 &&
+      player.position.x < -4.35 &&
+      player.position.z < -9.0;
+
+    const shouldShow =
+      !x1ArenaActive &&
+      !x1ArenaLoading &&
+      x1Distance < 2.7 &&
+      (!x1GateOpen || inEntryLane);
+
+    x1Button.textContent = x1GateOpen ? 'PRONTO' : 'ABRIR PORTÃO';
+    x1Button.classList.toggle('nearby', shouldShow);
+  }
+
   const delta = Math.min(clock.getDelta(), 0.05);
 
   let forward = -stickY;
@@ -3020,12 +4613,55 @@ function animate() {
   player.position.x += moveX * speed * delta;
   player.position.z += moveZ * speed * delta;
 
-  const limit = roomSize / 2 - 0.65;
+  const limit = x1ArenaActive ? 24.35 : roomSize / 2 - 0.65;
+  const movementCenter = x1ArenaActive ? x1ArenaCenter : 0;
   player.position.x = THREE.MathUtils.clamp(
-    player.position.x, -limit, limit
+    player.position.x,
+    movementCenter - limit,
+    movementCenter + limit
   );
+  // BLACKGATES_X1_GATE_COLLISION_V1
+  // A passagem só fica liberada quando o portão está aberto.
+  const x1InGateLane =
+    player.position.x > -8.25 &&
+    player.position.x < -4.35;
+
+  const x1CrossingWall =
+    !x1ArenaActive &&
+    x1InGateLane &&
+    player.position.z < -9.0;
+
+  // Com o portão fechado, impede atravessar a parede pelo vão.
+  if (!x1GateOpen && x1CrossingWall) {
+    player.position.z = -9.0;
+  }
+
+  const x1InsideOpening =
+    !x1ArenaActive &&
+    x1GateOpen &&
+    x1InGateLane &&
+    player.position.z < -9.0;
+
+  // Mantém a passagem externa acessível após abrir o portão.
+  const x1AlreadyOutside =
+    !x1ArenaActive &&
+    x1GateOpen &&
+    player.position.z < -10.05;
+
+  const zLimit = x1ArenaActive
+    ? 24.35
+    : ((x1InsideOpening || x1AlreadyOutside) ? 15.0 : limit);
+
+  if (x1AlreadyOutside) {
+    player.position.x = THREE.MathUtils.clamp(
+      player.position.x, -8.25, -4.35
+    );
+  }
+
   player.position.z = THREE.MathUtils.clamp(
-    player.position.z, -limit, limit
+    player.position.z,
+    movementCenter - zLimit,
+    movementCenter + zLimit
   );
 
   // Envia a posição local ao servidor dez vezes por segundo.
@@ -3372,9 +5008,14 @@ function animate() {
       player.position.z + Math.cos(cameraYaw) * Math.cos(cameraPitch) * 4.5
     );
 
-    const cameraLimit = roomSize / 2 - 0.5;
-    cameraPosition.x = THREE.MathUtils.clamp(cameraPosition.x, -cameraLimit, cameraLimit);
-    cameraPosition.z = THREE.MathUtils.clamp(cameraPosition.z, -cameraLimit, cameraLimit);
+    const cameraLimit = x1ArenaActive ? 24.5 : roomSize / 2 - 0.5;
+    const cameraCenter = x1ArenaActive ? x1ArenaCenter : 0;
+    cameraPosition.x = THREE.MathUtils.clamp(
+      cameraPosition.x, cameraCenter - cameraLimit, cameraCenter + cameraLimit
+    );
+    cameraPosition.z = THREE.MathUtils.clamp(
+      cameraPosition.z, cameraCenter - cameraLimit, cameraCenter + cameraLimit
+    );
     cameraPosition.y = THREE.MathUtils.clamp(cameraPosition.y, 1, wallHeight - 0.5);
 
     camera.position.lerp(cameraPosition, 1 - Math.exp(-7 * delta));
@@ -3386,6 +5027,7 @@ function animate() {
     flashlightGroundItems, flashlightItemAvailability
   );
   pickupFlashlightButton.style.display =
+    !x1ArenaActive &&
     !hasFlashlight && !flashlightPickupPending &&
     nearestFlashlight && nearestFlashlight.distance < 1.8
       ? "block" : "none";
@@ -3394,6 +5036,7 @@ function animate() {
     pistolGroundItems, pistolItemAvailability
   );
   pickupPistolButton.style.display =
+    !x1ArenaActive &&
     !hasPistol && !pistolPickupPending &&
     nearestPistol && nearestPistol.distance < 1.8
       ? "block" : "none";
@@ -3402,6 +5045,7 @@ function animate() {
     ammoGroundItems, ammoItemAvailability
   );
   pickupAmmoButton.style.display =
+    !x1ArenaActive &&
     !ammoPickupPending && nearestAmmo && nearestAmmo.distance < 1.8
       ? "block" : "none";
 
@@ -3685,8 +5329,36 @@ function animate() {
 
 animate();
 
-window.addEventListener('resize', () => {
-  camera.aspect = window.innerWidth / window.innerHeight;
+function resizeGameCanvas() {
+  const viewport = window.visualViewport;
+  const viewportWidth = Math.round(
+    viewport && viewport.width ? viewport.width : window.innerWidth
+  );
+  const width = viewportWidth;
+  const height = Math.round(
+    viewport && viewport.height ? viewport.height : window.innerHeight
+  );
+
+  renderer.domElement.style.position = 'fixed';
+  renderer.domElement.style.left = '0';
+  renderer.domElement.style.top = '0';
+  renderer.domElement.style.right = '0';
+  renderer.domElement.style.bottom = '0';
+  renderer.domElement.style.width = '100%';
+  renderer.domElement.style.height = '100%';
+
+  camera.aspect = width / height;
   camera.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.setSize(width, height, false);
+}
+
+window.addEventListener('resize', resizeGameCanvas);
+window.addEventListener('orientationchange', () => {
+  requestAnimationFrame(() => requestAnimationFrame(resizeGameCanvas));
 });
+if (window.visualViewport) {
+  window.visualViewport.addEventListener('resize', resizeGameCanvas);
+}
+resizeGameCanvas();
+
+// BLACKGATES_PLAYER_HP_HUD_EDIT_V1
