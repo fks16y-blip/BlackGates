@@ -286,7 +286,7 @@ function createX1RoundBarriers() {
     depthWrite: false
   });
 
-  for (const centerX of [-4, 4]) {
+  for (const centerX of [-23, 23]) {
     const barrier = new THREE.Mesh(
       new THREE.BoxGeometry(4.5, 3, 4.5),
       material.clone()
@@ -782,8 +782,8 @@ const flashlightGroundItems = [
   flashlightPickup.clone(true),
   flashlightPickup.clone(true)
 ];
-flashlightGroundItems[0].position.set(998.7, 0.13, 1000);
-flashlightGroundItems[1].position.set(998.7, 0.13, 1001.8);
+flashlightGroundItems[0].position.set(978, 0.13, 1000);
+flashlightGroundItems[1].position.set(1022, 0.13, 1001.8);
 flashlightGroundItems.forEach((item) => {
   item.visible = true;
   scene.add(item);
@@ -868,8 +868,8 @@ const pistolGroundItems = [
   pistolPickup.clone(true),
   pistolPickup.clone(true)
 ];
-pistolGroundItems[0].position.set(1001.3, 0.2, 1000);
-pistolGroundItems[1].position.set(1001.3, 0.2, 1001.8);
+pistolGroundItems[0].position.set(976, 0.2, 1000);
+pistolGroundItems[1].position.set(1024, 0.2, 1001.8);
 pistolGroundItems.forEach((item) => {
   item.visible = true;
   scene.add(item);
@@ -929,8 +929,8 @@ ammoBox.traverse((o) => {
 });
 scene.add(ammoBox);
 const ammoGroundItems = [ammoBox, ammoBox.clone(true)];
-ammoGroundItems[0].position.set(1000, 0.18, 1001.3);
-ammoGroundItems[1].position.set(1000, 0.18, 998.7);
+ammoGroundItems[0].position.set(977, 0.18, 1002);
+ammoGroundItems[1].position.set(1023, 0.18, 998.7);
 scene.add(ammoGroundItems[1]);
 
 
