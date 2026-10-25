@@ -2213,6 +2213,9 @@ ui.innerHTML = `
     <p>Distância da câmera</p>
     <input id="cameraDistanceSlider" type="range" min="1" max="10" step="0.5" value="4.5">
     <div id="cameraDistanceValue">Normal</div>
+    <p>Afastamento real da câmera</p>
+    <input id="cameraPhysicalDistanceSlider" type="range" min="4.5" max="12" step="0.5" value="4.5">
+    <div id="cameraPhysicalDistanceValue">4.5</div>
 
     <p>Prévia do suporte</p>
     <svg id="supportPreview" viewBox="0 0 240 100" style="width:100%;height:100px;background:#0b111b;border-radius:10px">
@@ -4409,6 +4412,38 @@ document.querySelectorAll('.skinCategory').forEach(button => {
 });
 
 const cameraDistanceStorageKey = 'blackGatesCameraDistanceV1';
+const cameraPhysicalDistanceSlider = document.getElementById('cameraPhysicalDistanceSlider');
+const cameraPhysicalDistanceValue = document.getElementById('cameraPhysicalDistanceValue');
+const cameraPhysicalDistanceStorageKey = 'blackGatesCameraPhysicalDistanceV1';
+let cameraPhysicalDistance = 4.5;
+
+function applyCameraPhysicalDistance(value) {
+  cameraPhysicalDistance = THREE.MathUtils.clamp(Number(value), 4.5, 12);
+  cameraPhysicalDistanceSlider.value = String(cameraPhysicalDistance);
+  cameraPhysicalDistanceValue.textContent = cameraPhysicalDistance.toFixed(1);
+}
+
+cameraPhysicalDistanceSlider.addEventListener('input', () => {
+  applyCameraPhysicalDistance(cameraPhysicalDistanceSlider.value);
+});
+
+cameraPhysicalDistanceSlider.addEventListener('change', () => {
+  try {
+    localStorage.setItem(cameraPhysicalDistanceStorageKey, String(cameraPhysicalDistance));
+  } catch (error) {
+    console.warn('Não foi possível salvar o afastamento da câmera.', error);
+  }
+});
+
+try {
+  const storedPhysicalDistance = localStorage.getItem(cameraPhysicalDistanceStorageKey);
+  applyCameraPhysicalDistance(
+    storedPhysicalDistance !== null ? storedPhysicalDistance : 4.5
+  );
+} catch (error) {
+  console.warn('Não foi possível restaurar o afastamento da câmera.', error);
+  applyCameraPhysicalDistance(4.5);
+}
 
 function applyCameraDistance(value) {
   const distance = THREE.MathUtils.clamp(Number(value), 1, 10);
@@ -5006,9 +5041,9 @@ function animate() {
     );
 
     cameraPosition.set(
-      player.position.x + Math.sin(cameraYaw) * Math.cos(cameraPitch) * 4.5,
-      player.position.y + 1.35 - crouchCameraOffset + Math.sin(cameraPitch) * 4.5 + 0.7,
-      player.position.z + Math.cos(cameraYaw) * Math.cos(cameraPitch) * 4.5
+      player.position.x + Math.sin(cameraYaw) * Math.cos(cameraPitch) * cameraPhysicalDistance,
+      player.position.y + 1.35 - crouchCameraOffset + Math.sin(cameraPitch) * cameraPhysicalDistance + 0.7,
+      player.position.z + Math.cos(cameraYaw) * Math.cos(cameraPitch) * cameraPhysicalDistance
     );
 
     const cameraLimit = x1ArenaActive ? 24.5 : roomSize / 2 - 0.5;
