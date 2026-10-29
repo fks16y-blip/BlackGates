@@ -1510,6 +1510,7 @@ gltfLoader.load(
     if (!player.userData.backCameraRig) {
       const rig = new THREE.Group();
       rig.name = 'backCameraSupport';
+      rig.visible = false; // Oculta o suporte e a câmera física visível.
       player.add(rig);
       player.userData.backCameraRig = rig;
       rig.userData.crouchBaseY = rig.position.y;
@@ -1611,13 +1612,14 @@ gltfLoader.load(
 
         const f = THREE.MathUtils.clamp(fold, 0, 1) - 0.35;
         const h = THREE.MathUtils.clamp(height, -30, 30) / 100;
+        const extension = Math.max(0, cameraPhysicalDistance - 4.5);
 
         const base = [0, 1.08, 0.05];
         const joint1 = [0.04, 1.10, 0.18];
-        const joint2 = [0.02, 1.27 + h * 0.35, 0.46 - f * 0.08];
-        const joint3 = [0.06, 1.47 + h * 0.75 - f * 0.25, 0.72 - f * 0.18];
-        const joint4 = [0.04, 1.65 + h * 0.90 - f * 0.42, 0.56 - f * 0.10];
-        const tip = [0.03, 1.87 + h - f * 0.65, 0.42 - f * 0.20];
+        const joint2 = [0.02, 1.27 + h * 0.35, 0.46 - f * 0.08 + extension * 0.25];
+        const joint3 = [0.06, 1.47 + h * 0.75 - f * 0.25, 0.72 - f * 0.18 + extension * 0.50];
+        const joint4 = [0.04, 1.65 + h * 0.90 - f * 0.42, 0.56 - f * 0.10 + extension * 0.75];
+        const tip = [0.03, 1.87 + h - f * 0.65, 0.42 - f * 0.20 + extension];
 
         addSupportBar(base, joint1, 0.045);
         addSupportBar(joint1, joint2, 0.038);
@@ -2185,6 +2187,7 @@ ui.innerHTML = `
   <div id="stickBase"><div id="stickKnob"></div></div>
   <button id="runButton" aria-label="Correr"><img src="images/run-icon.jpg" alt="" draggable="false"></button>
   <button id="crouchButton" aria-label="Agachar"><img src="images/crouch-icon.jpg" alt="" draggable="false"></button>
+  <button id="jumpButton" aria-label="Pular">↑</button>
   <button id="cameraSettingsButton" aria-label="Configuracoes">🔧</button>
   <div id="cameraSettingsPanel">
     <section id="hudSettingsColumn" aria-label="Configurações do HUD">
@@ -2197,9 +2200,11 @@ ui.innerHTML = `
           <option value="stickBase">Joystick</option>
           <option value="runButton">Correr</option>
           <option value="crouchButton">Agachar</option>
+          <option value="jumpButton">Pular</option>
           <option value="shootButton">Disparar</option>
           <option value="reloadButton">Recarregar</option>
           <option value="playerHPPanel">Vida / HP</option>
+          <option value="itemBar">Slots de itens</option>
         </select>
         <label for="hudSizeSlider">Tamanho individual:</label>
         <input id="hudSizeSlider" type="range" min="60" max="160" value="100" step="5">
@@ -2209,12 +2214,16 @@ ui.innerHTML = `
         <button id="resetHudButton" type="button">RESTAURAR PADRÃO</button>
       </div>
     </section>
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin:12px 0">
+      <label for="autoRunToggle">Corrida automática</label>
+      <input id="autoRunToggle" type="checkbox" style="width:22px;height:22px;accent-color:#19b45a">
+    </div>
     <strong>CONFIGURAÇÕES</strong>
     <p>Distância da câmera</p>
     <input id="cameraDistanceSlider" type="range" min="1" max="10" step="0.5" value="4.5">
     <div id="cameraDistanceValue">Normal</div>
     <p>Afastamento real da câmera</p>
-    <input id="cameraPhysicalDistanceSlider" type="range" min="4.5" max="12" step="0.5" value="4.5">
+    <input id="cameraPhysicalDistanceSlider" type="range" min="4.5" max="7" step="0.5" value="4.5">
     <div id="cameraPhysicalDistanceValue">4.5</div>
 
     <p>Prévia do suporte</p>
@@ -2274,10 +2283,7 @@ ui.innerHTML = `
   <button id="shootButton" type="button" style="display:none" aria-label="Disparar"><img src="images/shoot-icon.jpg" alt="" draggable="false"></button>
   <button id="reloadButton" type="button" style="display:none" aria-label="Recarregar"><img src="images/reload-icon.jpg" alt="" draggable="false"></button>
 
-  <button id="trainingButton" type="button"
-    style="position:fixed;top:16%;left:50%;transform:translateX(-50%);z-index:30;padding:12px 24px;border:1px solid #00cfff;border-radius:10px;background:#101c2b;color:#fff;font-weight:bold">
-    TREINO
-  </button>
+  <button id="trainingButton" type="button" style="display:none" aria-hidden="true" tabindex="-1"></button>
   <button id="x1OpenButton" type="button">ABRIR PORTÃO</button>
   <div id="x1LoadingScreen" role="status" aria-live="polite">
     <div class="x1Loader"></div>
@@ -2296,6 +2302,129 @@ ui.innerHTML = `
   <div id="helpText">JOYSTICK: MOVER · ARRASTE À DIREITA: OLHAR</div>
 `;
 document.body.appendChild(ui);
+
+
+
+// BLACKGATES_DEATH_DISINTEGRATION_V1
+const deathDisintegrations = new Map();
+const deathHiddenCharacters = new Map();
+
+function restoreLocalCharacterAfterDeath() {
+  for (const [key, root] of deathHiddenCharacters) {
+    if (!root) continue;
+
+    root.traverse(object => {
+      if (object.isMesh && object.userData.deathOriginalVisible !== undefined) {
+        object.visible = object.userData.deathOriginalVisible;
+        delete object.userData.deathOriginalVisible;
+      }
+    });
+
+    root.visible = true;
+  }
+
+  deathHiddenCharacters.clear();
+
+  for (const [key, effect] of deathDisintegrations) {
+    scene.remove(effect.particles);
+    effect.geometry.dispose();
+    effect.material.dispose();
+    deathDisintegrations.delete(key);
+  }
+}
+
+
+function startCharacterDisintegration(root, key) {
+  if (root) deathHiddenCharacters.set(key, root);
+  if (!root || deathDisintegrations.has(key)) return;
+
+  const pieces = [];
+  const box = new THREE.Box3().setFromObject(root);
+  if (box.isEmpty()) return;
+
+  const center = box.getCenter(new THREE.Vector3());
+  const size = box.getSize(new THREE.Vector3());
+  const count = Math.min(180, Math.max(70, Math.round(size.y * 65)));
+  const geometry = new THREE.BufferGeometry();
+  const positions = new Float32Array(count * 3);
+  const velocities = [];
+
+  for (let i = 0; i < count; i++) {
+    positions[i * 3] = center.x + (Math.random() - 0.5) * size.x;
+    positions[i * 3 + 1] = box.min.y + Math.random() * size.y;
+    positions[i * 3 + 2] = center.z + (Math.random() - 0.5) * size.z;
+    velocities.push(new THREE.Vector3(
+      (Math.random() - 0.5) * 1.8,
+      0.45 + Math.random() * 2.1,
+      (Math.random() - 0.5) * 1.8
+    ));
+  }
+
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  const material = new THREE.PointsMaterial({
+    color: 0x8edcff,
+    size: 0.055,
+    transparent: true,
+    opacity: 1,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false
+  });
+  const particles = new THREE.Points(geometry, material);
+  scene.add(particles);
+
+  root.traverse(object => {
+    if (object.isMesh) {
+      object.userData.deathOriginalVisible = object.visible;
+      object.visible = false;
+    }
+  });
+  root.visible = false;
+
+  const startedAt = performance.now();
+  deathDisintegrations.set(key, {
+    root, particles, geometry, material, velocities, startedAt
+  });
+}
+
+function updateDeathDisintegrations(delta) {
+  const now = performance.now();
+
+  for (const [key, effect] of deathDisintegrations) {
+    const positions = effect.geometry.attributes.position.array;
+    const elapsed = (now - effect.startedAt) / 1000;
+
+    for (let i = 0; i < effect.velocities.length; i++) {
+      const v = effect.velocities[i];
+      positions[i * 3] += v.x * delta;
+      positions[i * 3 + 1] += v.y * delta;
+      positions[i * 3 + 2] += v.z * delta;
+      v.y -= 1.25 * delta;
+    }
+
+    effect.geometry.attributes.position.needsUpdate = true;
+    effect.material.opacity = Math.max(0, 1 - elapsed / 1.8);
+
+    if (elapsed >= 1.8) {
+      scene.remove(effect.particles);
+      effect.geometry.dispose();
+      effect.material.dispose();
+      deathDisintegrations.delete(key);
+    }
+  }
+}
+
+function disintegrateLocalCharacter() {
+  if (animatedCharacterModel) {
+    startCharacterDisintegration(animatedCharacterModel, 'local');
+  } else {
+    startCharacterDisintegration(player, 'local');
+  }
+}
+
+function disintegrateRemoteCharacter(playerId) {
+  const remote = remotePlayers.get(playerId);
+  if (remote) startCharacterDisintegration(remote.root, `remote:${playerId}`);
+}
 
 
 // BLACKGATES_PLAYER_HP_BAR_V1
@@ -2356,7 +2485,10 @@ function damageLocalPlayer(amount) {
   updatePlayerHPUI();
 
   if (playerHP === 0) {
-    console.log("Jogador sem HP.");
+    disintegrateLocalCharacter();
+    if (multiplayerSocket && multiplayerSocket.readyState === WebSocket.OPEN) {
+      multiplayerSocket.send(JSON.stringify({ type: 'playerDeath' }));
+    }
   }
 }
 
@@ -2887,6 +3019,9 @@ shootButton.addEventListener("pointerdown", (event) => {
   event.preventDefault();
   if (!pistolEquipped || pistolMagazine <= 0) return;
 
+  // Vira o personagem para a direção horizontal da mira ao disparar.
+  player.rotation.y = cameraYaw;
+
   pistolMagazine--;
   damageTrainingTargetFromAim();
   updateAmmoUI();
@@ -3256,6 +3391,16 @@ style.textContent = `
     pointer-events:none;
     user-select:none;
   }
+  #jumpButton {
+    position:fixed; right:100px; bottom:42px;
+    width:64px; height:64px; padding:0;
+    border-radius:50%; box-sizing:border-box;
+    border:2px solid white; background:rgba(0,0,0,.88);
+    color:white; font:bold 30px Arial,sans-serif;
+    display:flex; align-items:center; justify-content:center;
+    z-index:10; touch-action:none; user-select:none;
+  }
+  #jumpButton:active { background:rgba(55,135,235,.95); }
   #crouchButton.active { background:rgba(190,125,45,.95); }
   #runButton.active { background:rgba(25,180,90,.95); }
 
@@ -3366,9 +3511,11 @@ style.textContent = `
   body.hud-editing #stickBase,
   body.hud-editing #runButton,
   body.hud-editing #crouchButton,
+  body.hud-editing #jumpButton,
   body.hud-editing #shootButton,
   body.hud-editing #reloadButton,
-  body.hud-editing #playerHPPanel {
+  body.hud-editing #playerHPPanel,
+  body.hud-editing #itemBar {
     z-index: 2000 !important;
     touch-action: none;
   }
@@ -3616,7 +3763,18 @@ const stickBase = document.getElementById('stickBase');
 const stickKnob = document.getElementById('stickKnob');
 const runButton = document.getElementById('runButton');
 const crouchButton = document.getElementById('crouchButton');
+const jumpButton = document.getElementById('jumpButton');
 let crouching = false;
+let jumpVelocity = 0;
+let jumpGroundY = 0;
+let jumpRequested = false;
+let jumpStarted = false;
+let jumpMoveX = 0;
+let jumpMoveZ = -1;
+let jumpHorizontalSpeed = 0;
+const jumpImpulse = 6.5;
+const jumpGravity = 18;
+function requestJump() { jumpRequested = true; }
 
 function setCrouching(value) {
   crouching = value;
@@ -3629,6 +3787,13 @@ crouchButton.addEventListener('pointerdown', event => {
   event.preventDefault();
   event.stopPropagation();
   setCrouching(!crouching);
+});
+
+jumpButton.addEventListener('pointerdown', event => {
+  if (event.pointerType === 'mouse' && event.button !== 0) return;
+  event.preventDefault();
+  event.stopPropagation();
+  requestJump();
 });
 
 const cameraSettingsButton = document.getElementById('cameraSettingsButton');
@@ -3664,9 +3829,11 @@ const supportResetButton = document.getElementById('supportResetButton');
     stickBase: document.getElementById('stickBase'),
     runButton: document.getElementById('runButton'),
     crouchButton: document.getElementById('crouchButton'),
+    jumpButton: document.getElementById('jumpButton'),
     shootButton: document.getElementById('shootButton'),
     reloadButton: document.getElementById('reloadButton'),
-    playerHPPanel: document.getElementById('playerHPPanel')
+    playerHPPanel: document.getElementById('playerHPPanel'),
+    itemBar: document.getElementById('itemBar')
   };
 
   if (!editButton || !controls || !saveButton || !cancelButton ||
@@ -3786,7 +3953,7 @@ const supportResetButton = document.getElementById('supportResetButton');
   document.addEventListener('pointerdown', event => {
     if (!editing) return;
     const target = event.target.closest
-      ? event.target.closest('#stickBase, #runButton, #crouchButton, #shootButton, #reloadButton, #playerHPPanel')
+      ? event.target.closest('#stickBase, #runButton, #crouchButton, #jumpButton, #shootButton, #reloadButton, #playerHPPanel, #itemBar')
       : null;
     if (!target || !Object.values(elements).includes(target)) return;
 
@@ -4186,15 +4353,27 @@ function connectMultiplayer() {
         } else if (message.itemType === 'ammo') {
           ammoPickupPending = false;
         }
-            } else if (message.type === 'playerHP') {
+      } else if (message.type === 'playerHP') {
         const receivedHP = Number(message.hp);
         if (Number.isFinite(receivedHP)) {
+          const wasAlive = playerHP > 0;
           playerHP = Math.max(0, Math.min(playerMaxHP, Math.round(receivedHP)));
           updatePlayerHPUI();
+
           if (playerHP === 0) {
-            multiplayerRoomInfo.textContent = 'Você foi derrotado! (respawn ainda não implementado)';
+            disintegrateLocalCharacter();
+            multiplayerRoomInfo.textContent = 'Você foi derrotado!';
+
+            if (wasAlive && multiplayerSocket &&
+                multiplayerSocket.readyState === WebSocket.OPEN) {
+              multiplayerSocket.send(JSON.stringify({ type: 'playerDeath' }));
+            }
           }
         }
+
+      } else if (message.type === 'playerDeath') {
+        const deadId = message.playerId || message.id;
+        if (deadId) disintegrateRemoteCharacter(deadId);
       } else if (message.type === 'shoot') {
         playRemoteShot(message.playerId || message.id);
       } else if (message.type === 'x1ReadyUpdate') {
@@ -4221,6 +4400,9 @@ function connectMultiplayer() {
         }
       } else if (message.type === 'x1RoundState') {
         updateX1RoundHUD(message);
+        if (message.phase === 'countdown') {
+          restoreLocalCharacterAfterDeath();
+        }
         if (message.phase === 'countdown' && Number(message.round) > 0 &&
             Number(message.round) !== x1LastLoadoutResetRound) {
           x1LastLoadoutResetRound = Number(message.round);
@@ -4232,6 +4414,7 @@ function connectMultiplayer() {
           player.rotation.y = multiplayerPlayerId === Object.keys(message.spawns)[0]
             ? Math.PI / 2 : -Math.PI / 2;
           restoreLocalPlayerHP();
+          restoreLocalCharacterAfterDeath();
         }
       } else if (message.type === 'x1RoundEnd') {
         updateX1RoundHUD({
@@ -4418,9 +4601,17 @@ const cameraPhysicalDistanceStorageKey = 'blackGatesCameraPhysicalDistanceV1';
 let cameraPhysicalDistance = 4.5;
 
 function applyCameraPhysicalDistance(value) {
-  cameraPhysicalDistance = THREE.MathUtils.clamp(Number(value), 4.5, 12);
+  cameraPhysicalDistance = THREE.MathUtils.clamp(Number(value), 4.5, 7);
   cameraPhysicalDistanceSlider.value = String(cameraPhysicalDistance);
   cameraPhysicalDistanceValue.textContent = cameraPhysicalDistance.toFixed(1);
+
+  const rig = player.userData.backCameraRig;
+  if (rig && rig.userData.rebuildSupport) {
+    rig.userData.rebuildSupport(
+      (rig.userData.supportFold ?? 0.35) * 100,
+      (rig.userData.supportHeight ?? 0) * 100
+    );
+  }
 }
 
 cameraPhysicalDistanceSlider.addEventListener('input', () => {
@@ -4491,6 +4682,18 @@ let stickX = 0;
 let stickY = 0;
 let stickPointer = null;
 let running = false;
+const autoRunToggle = document.getElementById('autoRunToggle');
+const autoRunStorageKey = 'blackGatesAutoRunV1';
+let autoRunEnabled = false;
+let autoRunActive = false;
+
+try {
+  autoRunEnabled = localStorage.getItem(autoRunStorageKey) === 'true';
+  autoRunToggle.checked = autoRunEnabled;
+} catch (error) {
+  console.warn('Não foi possível restaurar a corrida automática.', error);
+}
+
 let cameraYaw = 0;
 let cameraPitch = 0.28;
 let cameraPointer = null;
@@ -4515,6 +4718,11 @@ function updateStick(event) {
 
   stickX = THREE.MathUtils.clamp(dx / max, -1, 1);
   stickY = THREE.MathUtils.clamp(dy / max, -1, 1);
+
+  if (autoRunActive && Math.hypot(stickX, stickY) > 0.15) {
+    autoRunActive = false;
+    setRunning(false);
+  }
 
   stickKnob.style.transform =
     `translate(${dx}px, ${dy}px)`;
@@ -4543,11 +4751,35 @@ function setRunning(value) {
   running = value;
   runButton.classList.toggle('active', value);
 }
+
+autoRunToggle.addEventListener('change', () => {
+  autoRunEnabled = autoRunToggle.checked;
+
+  if (!autoRunEnabled) {
+    autoRunActive = false;
+    setRunning(false);
+  }
+
+  try {
+    localStorage.setItem(autoRunStorageKey, String(autoRunEnabled));
+  } catch (error) {
+    console.warn('Não foi possível salvar a configuração de corrida.', error);
+  }
+});
+
+setRunning(false);
+
 runButton.addEventListener('pointerdown', event => {
   if (event.pointerType === 'mouse' && event.button !== 0) return;
   event.preventDefault();
   event.stopPropagation();
-  setRunning(!running);
+
+  if (autoRunEnabled) {
+    autoRunActive = !autoRunActive;
+    setRunning(autoRunActive);
+  } else {
+    setRunning(!running);
+  }
 });
 
 // OLHAR: arraste com o dedo na metade direita da tela
@@ -4563,7 +4795,6 @@ renderer.domElement.addEventListener('pointerdown', event => {
     return;
   }
 
-  if (event.clientX < window.innerWidth * 0.42) return;
   cameraPointer = event.pointerId;
   lastTouchX = event.clientX;
   lastTouchY = event.clientY;
@@ -4575,7 +4806,7 @@ renderer.domElement.addEventListener('pointermove', event => {
   const dy = event.clientY - lastTouchY;
   cameraYaw -= dx * 0.006;
   cameraPitch = THREE.MathUtils.clamp(
-    cameraPitch + dy * 0.003, -0.60, 1.3
+    cameraPitch + dy * 0.006, -0.75, 0.75
   );
   lastTouchX = event.clientX;
   lastTouchY = event.clientY;
@@ -4590,6 +4821,10 @@ renderer.domElement.addEventListener('pointercancel', stopCameraDrag);
 const keys = {};
 window.addEventListener('keydown', event => {
   keys[event.key.toLowerCase()] = true;
+  if (event.code === 'Space' && !event.repeat) {
+    event.preventDefault();
+    requestJump();
+  }
   if (event.key === 'Shift') setRunning(true);
 });
 window.addEventListener('keyup', event => {
@@ -4629,7 +4864,31 @@ function animate() {
 
   const delta = Math.min(clock.getDelta(), 0.05);
 
-  let forward = -stickY;
+  jumpStarted = false;
+
+  if (jumpRequested) {
+    if (player.position.y <= jumpGroundY + 0.001 && jumpVelocity <= 0) {
+      jumpVelocity = jumpImpulse;
+      jumpStarted = true;
+    }
+    jumpRequested = false;
+  }
+
+  const jumping = player.position.y > jumpGroundY || jumpVelocity > 0;
+
+  if (jumping) {
+    if (!crouching) setCrouching(true);
+    jumpVelocity -= jumpGravity * delta;
+    player.position.y += jumpVelocity * delta;
+
+    if (player.position.y <= jumpGroundY) {
+      player.position.y = jumpGroundY;
+      jumpVelocity = 0;
+      if (crouching) setCrouching(false);
+    }
+  }
+
+  let forward = autoRunActive ? 1 : -stickY;
   let side = stickX;
   if (keys.w || keys.arrowup) forward = 1;
   if (keys.s || keys.arrowdown) forward = -1;
@@ -4648,8 +4907,27 @@ function animate() {
   const moveZ = -Math.cos(cameraYaw) * forward -
                  Math.sin(cameraYaw) * side;
 
-  player.position.x += moveX * speed * delta;
-  player.position.z += moveZ * speed * delta;
+  if (jumpStarted) {
+    const launchLength = Math.hypot(moveX, moveZ);
+
+    if (launchLength > 0.01) {
+      jumpMoveX = moveX / launchLength;
+      jumpMoveZ = moveZ / launchLength;
+      jumpHorizontalSpeed = speed;
+    } else {
+      jumpMoveX = 0;
+      jumpMoveZ = 0;
+      jumpHorizontalSpeed = 0;
+    }
+  }
+
+  if (jumping) {
+    player.position.x += jumpMoveX * jumpHorizontalSpeed * delta;
+    player.position.z += jumpMoveZ * jumpHorizontalSpeed * delta;
+  } else {
+    player.position.x += moveX * speed * delta;
+    player.position.z += moveZ * speed * delta;
+  }
 
   const limit = x1ArenaActive ? 24.35 : roomSize / 2 - 0.65;
   const movementCenter = x1ArenaActive ? x1ArenaCenter : 0;
@@ -4829,7 +5107,9 @@ function animate() {
   }
 
   if (moving) {
-    player.rotation.y = Math.atan2(-moveX, -moveZ);
+    if (!jumping) {
+      player.rotation.y = Math.atan2(-moveX, -moveZ);
+    }
     walkTime += delta * (running ? 12 : 7);
     const swing = Math.sin(walkTime) * 0.55;
     leftLeg.rotation.x = swing;
@@ -5007,30 +5287,64 @@ function animate() {
     }
     cameraRig.position.y =
       cameraRig.userData.crouchBaseY - (crouching ? 0.45 : 0);
+
+    // Mantém o suporte alinhado com a órbita horizontal e vertical da câmera.
+    cameraRig.rotation.y = cameraYaw - player.rotation.y;
   }
 
   const physicalCamera = player.userData.backCameraLens;
 
   if (physicalCamera) {
     physicalCamera.updateWorldMatrix(true, false);
-    physicalCamera.getWorldPosition(cameraPosition);
 
-    const physicalDirection = new THREE.Vector3(
-      -Math.sin(cameraYaw) * Math.cos(cameraPitch),
-      -Math.sin(cameraPitch),
-      -Math.cos(cameraYaw) * Math.cos(cameraPitch)
-    ).normalize();
+    // Aproxima suavemente a câmera apenas ao olhar de baixo para cima.
+    const orbitTargetY =
+      player.position.y + 1.8 -
+      (crouching ? 0.45 : 0);
 
-    cameraTarget.copy(cameraPosition)
-      .addScaledVector(physicalDirection, 5);
+    const orbitDistance = cameraPhysicalDistance;
+    const cameraTargetHeight = orbitTargetY;
 
-    // Visao sobre o ombro direito: desloca a camera sem mover o alvo da mira.
-    camera.position.copy(cameraPosition);
-    if (flashlightEquipped || pistolEquipped) {
-      // Visao sobre o ombro somente com a lanterna equipada.
-      camera.position.x += Math.cos(cameraYaw) * 0.65;
-      camera.position.z -= Math.sin(cameraYaw) * 0.65;
+    cameraTarget.set(
+      player.position.x,
+      cameraTargetHeight,
+      player.position.z
+    );
+
+    if (pistolEquipped) {
+      cameraTarget.x += Math.cos(cameraYaw) * 0.9;
+      cameraTarget.z -= Math.sin(cameraYaw) * 0.9;
     }
+
+    cameraPosition.set(
+      player.position.x + Math.sin(cameraYaw) * Math.cos(cameraPitch) * orbitDistance,
+      orbitTargetY + Math.sin(cameraPitch) * orbitDistance,
+      player.position.z + Math.cos(cameraYaw) * Math.cos(cameraPitch) * orbitDistance
+    );
+
+    // Mantém a câmera física dentro dos limites do cenário sem limitar a rotação.
+    const physicalCameraLimit = x1ArenaActive ? 24.5 : roomSize / 2 - 0.5;
+    const physicalCameraCenter = x1ArenaActive ? x1ArenaCenter : 0;
+
+    cameraPosition.x = THREE.MathUtils.clamp(
+      cameraPosition.x,
+      physicalCameraCenter - physicalCameraLimit,
+      physicalCameraCenter + physicalCameraLimit
+    );
+    cameraPosition.z = THREE.MathUtils.clamp(
+      cameraPosition.z,
+      physicalCameraCenter - physicalCameraLimit,
+      physicalCameraCenter + physicalCameraLimit
+    );
+
+    const physicalCameraSmoothing = 1 - Math.exp(-7 * delta);
+    camera.position.lerp(cameraPosition, physicalCameraSmoothing);
+
+
+
+    // Impede a câmera de atravessar o chão.
+    camera.position.y = Math.max(0.3, camera.position.y);
+
     camera.lookAt(cameraTarget);
   } else {
     const crouchCameraOffset = crouching ? 0.55 : 0;
@@ -5042,10 +5356,11 @@ function animate() {
 
     cameraPosition.set(
       player.position.x + Math.sin(cameraYaw) * Math.cos(cameraPitch) * cameraPhysicalDistance,
-      player.position.y + 1.35 - crouchCameraOffset + Math.sin(cameraPitch) * cameraPhysicalDistance + 0.7,
+      player.position.y + 1.35 - crouchCameraOffset + Math.sin(cameraPitch) * cameraPhysicalDistance,
       player.position.z + Math.cos(cameraYaw) * Math.cos(cameraPitch) * cameraPhysicalDistance
     );
 
+    // Mantém a câmera dentro dos limites da sala ou da arena X1.
     const cameraLimit = x1ArenaActive ? 24.5 : roomSize / 2 - 0.5;
     const cameraCenter = x1ArenaActive ? x1ArenaCenter : 0;
     cameraPosition.x = THREE.MathUtils.clamp(
@@ -5054,7 +5369,6 @@ function animate() {
     cameraPosition.z = THREE.MathUtils.clamp(
       cameraPosition.z, cameraCenter - cameraLimit, cameraCenter + cameraLimit
     );
-    cameraPosition.y = THREE.MathUtils.clamp(cameraPosition.y, 1, wallHeight - 0.5);
 
     camera.position.lerp(cameraPosition, 1 - Math.exp(-7 * delta));
     camera.lookAt(cameraTarget);
@@ -5085,6 +5399,8 @@ function animate() {
       ? "block" : "none";
 
   // Suaviza a movimentação dos personagens remotos.
+  updateDeathDisintegrations(delta);
+
   for (const remote of remotePlayers.values()) {
     const buffer = remote.positionBuffer;
     const renderTime = performance.now() - 50;
